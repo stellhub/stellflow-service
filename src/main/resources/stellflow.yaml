@@ -121,6 +121,35 @@ stellflow:
       # Cluster id returned by the controller-side gRPC service.
       clusterId: stellflow-dev-cluster
 
+  controller:
+    quorum:
+      # Whether to enable Apache Ratis based controller quorum.
+      # When enabled, controller metadata mutations are first appended to the quorum log
+      # and only committed records are allowed to drive assignment and partition control snapshots.
+      enabled: false
+
+      # Logical id of the current controller quorum node.
+      # This id must appear in the peers list below.
+      selfId: c1
+
+      # Stable Raft group id for the controller metadata quorum.
+      # Keep this value unchanged for the same logical cluster.
+      groupId: 11111111-1111-1111-1111-111111111111
+
+      # Local quorum endpoint of the current controller node.
+      # This is a configuration-layer grpc:// URI only; it is not embedded into the data-plane TCP protocol.
+      endpoint: grpc://127.0.0.1:19195
+
+      # Storage directory used by Apache Ratis for controller quorum logs and snapshots.
+      storageDir: data/controller-quorum
+
+      # Full peer list of the controller quorum.
+      # Format: controllerId@grpc://host:port,controllerId@grpc://host:port
+      peers: c1@grpc://127.0.0.1:19195
+
+      # Client-side request timeout when submitting controller metadata commands to quorum.
+      requestTimeoutMs: 3000
+
   observability:
     metrics:
       http:

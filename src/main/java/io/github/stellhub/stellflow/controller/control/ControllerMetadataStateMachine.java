@@ -37,14 +37,27 @@ public class ControllerMetadataStateMachine {
      */
     public synchronized void registerBroker(
             int brokerId, String advertisedEndpoint, String advertisedHost, int advertisedPort) {
+        registerBroker(
+                brokerId,
+                advertisedEndpoint,
+                advertisedHost,
+                advertisedPort,
+                System.currentTimeMillis());
+    }
+
+    /**
+     * 记录 broker 注册信息并保留外部提交时间。
+     */
+    public synchronized void registerBroker(
+            int brokerId,
+            String advertisedEndpoint,
+            String advertisedHost,
+            int advertisedPort,
+            long registeredAtMs) {
         brokers.put(
                 brokerId,
                 new BrokerRegistrationMetadata(
-                        brokerId,
-                        advertisedEndpoint,
-                        advertisedHost,
-                        advertisedPort,
-                        System.currentTimeMillis()));
+                        brokerId, advertisedEndpoint, advertisedHost, advertisedPort, registeredAtMs));
         recomputeSnapshots();
     }
 

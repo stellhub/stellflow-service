@@ -1,5 +1,7 @@
 package io.github.stellhub.stellflow.controller.control;
 
+import io.github.stellhub.stellflow.controller.quorum.ControllerQuorumConfig;
+import io.github.stellhub.stellflow.controller.quorum.ControllerQuorumManager;
 import io.github.stellhub.stellflow.controller.replica.ControllerReplicaCoordinator;
 import io.grpc.Server;
 import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
@@ -17,6 +19,8 @@ public class ControllerBrokerControlServer implements AutoCloseable {
     private final ControllerPartitionControlRegistry partitionControlRegistry;
     private final PartitionControlResultRegistry partitionControlResultRegistry;
     private final ControllerMetadataStateMachine metadataStateMachine;
+    private final ControllerMetadataCommandService metadataCommandService;
+    private final ControllerQuorumManager quorumManager;
     private final ControllerReplicaCoordinator replicaCoordinator;
     private Server server;
 
@@ -26,6 +30,22 @@ public class ControllerBrokerControlServer implements AutoCloseable {
             ControllerPartitionControlRegistry partitionControlRegistry,
             PartitionControlResultRegistry partitionControlResultRegistry,
             ControllerReplicaCoordinator replicaCoordinator) {
+        this(
+                config,
+                assignmentRegistry,
+                partitionControlRegistry,
+                partitionControlResultRegistry,
+                ControllerQuorumConfig.load(),
+                replicaCoordinator);
+    }
+
+    public ControllerBrokerControlServer(
+            ControlPlaneGrpcConfig config,
+            ControllerAssignmentRegistry assignmentRegistry,
+            ControllerPartitionControlRegistry partitionControlRegistry,
+            PartitionControlResultRegistry partitionControlResultRegistry,
+            ControllerQuorumConfig quorumConfig,
+            ControllerReplicaCoordinator replicaCoordinator) {
         this.config = config;
         this.assignmentRegistry = assignmentRegistry;
         this.partitionControlRegistry = partitionControlRegistry;
@@ -33,6 +53,14 @@ public class ControllerBrokerControlServer implements AutoCloseable {
         this.metadataStateMachine =
                 new ControllerMetadataStateMachine(
                         assignmentRegistry, partitionControlRegistry, partitionControlResultRegistry);
+        this.quorumManager =
+                quorumConfig.isEnabled()
+                        ? new ControllerQuorumManager(quorumConfig, metadataStateMachine)
+                        : null;
+        this.metadataCommandService =
+                quorumManager != null
+                        ? quorumManager
+                        : new DirectControllerMetadataCommandService(metadataStateMachine);
         this.replicaCoordinator = replicaCoordinator;
     }
 
@@ -44,6 +72,9 @@ public class ControllerBrokerControlServer implements AutoCloseable {
             return;
         }
         try {
+            if (quorumManager != null) {
+                quorumManager.start();
+            }
             server =
                     NettyServerBuilder.forAddress(
                                     new java.net.InetSocketAddress(
@@ -53,6 +84,7 @@ public class ControllerBrokerControlServer implements AutoCloseable {
                                             assignmentRegistry,
                                             partitionControlRegistry,
                                             partitionControlResultRegistry,
+                                            metadataCommandService,
                                             metadataStateMachine,
                                             replicaCoordinator,
                                             config.getClusterId()))
@@ -83,13 +115,23 @@ public class ControllerBrokerControlServer implements AutoCloseable {
         return metadataStateMachine;
     }
 
+    public ControllerMetadataCommandService metadataCommandService() {
+        return metadataCommandService;
+    }
+
     @Override
     public synchronized void close() {
         if (server == null) {
+            if (quorumManager != null) {
+                quorumManager.close();
+            }
             return;
         }
         server.shutdownNow();
         server = null;
+        if (quorumManager != null) {
+            quorumManager.close();
+        }
         log.info("Controller/Broker gRPC server stopped");
     }
 }

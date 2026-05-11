@@ -8,6 +8,7 @@ import io.github.stellhub.stellflow.controller.control.ControllerBrokerControlCl
 import io.github.stellhub.stellflow.controller.control.ControllerBrokerControlServer;
 import io.github.stellhub.stellflow.controller.control.ControllerMetadataStateMachine;
 import io.github.stellhub.stellflow.controller.control.PartitionControlResultRegistry;
+import io.github.stellhub.stellflow.controller.quorum.ControllerQuorumConfig;
 import io.github.stellhub.stellflow.network.protocol.ProtocolCodecRegistry;
 import io.github.stellhub.stellflow.network.transport.NettyTransportConfig;
 import io.github.stellhub.stellflow.network.transport.SocketServer;
@@ -282,6 +283,7 @@ class ReplicaFetchManagerTest {
     void shouldReceiveDynamicAssignmentsFromGrpcControlPlane() throws Exception {
         int leaderPort = findFreePort();
         int controllerPort = findFreePort();
+        int quorumPort = findFreePort();
         Path leaderLogDir = tempDir.resolve("leader-grpc");
         Path followerLogDir = tempDir.resolve("follower-grpc");
 
@@ -333,6 +335,15 @@ class ReplicaFetchManagerTest {
                             new io.github.stellhub.stellflow.controller.control.ControllerAssignmentRegistry(),
                             new io.github.stellhub.stellflow.controller.control.ControllerPartitionControlRegistry(),
                             new PartitionControlResultRegistry(),
+                            ControllerQuorumConfig.builder()
+                                    .enabled(true)
+                                    .selfId("c1")
+                                    .groupId("22222222-2222-2222-2222-222222222222")
+                                    .endpoint("grpc://127.0.0.1:" + quorumPort)
+                                    .storageDir(tempDir.resolve("controller-quorum"))
+                                    .peers("c1@grpc://127.0.0.1:" + quorumPort)
+                                    .requestTimeoutMs(3000)
+                                    .build(),
                             leaderBrokerApis.controllerReplicaCoordinator());
             ControllerBrokerControlClient client =
                     new ControllerBrokerControlClient(
@@ -363,14 +374,14 @@ class ReplicaFetchManagerTest {
                 manager.start();
                 client.start();
 
-                ControllerMetadataStateMachine stateMachine = server.metadataStateMachine();
                 PartitionControlResultRegistry resultRegistry = server.partitionControlResultRegistry();
-                stateMachine.registerBroker(
+                server.metadataCommandService().registerBroker(
                         0,
                         "stellflow://127.0.0.1:" + leaderPort,
                         "127.0.0.1",
-                        leaderPort);
-                stateMachine.upsertPartition(
+                        leaderPort,
+                        System.currentTimeMillis());
+                server.metadataCommandService().upsertPartition(
                         ControllerMetadataStateMachine.partition(
                                 "replica-grpc",
                                 0,
@@ -405,7 +416,7 @@ class ReplicaFetchManagerTest {
                                 followerLogManager.read("replica-grpc", 0, 0, 4096).records(),
                                 StandardCharsets.UTF_8));
 
-                stateMachine.upsertPartition(
+                server.metadataCommandService().upsertPartition(
                         ControllerMetadataStateMachine.partition(
                                 "replica-grpc",
                                 0,
@@ -421,6 +432,16 @@ class ReplicaFetchManagerTest {
                         5000);
                 waitUntil(
                         () -> followerLogManager.leaderEpoch("replica-grpc", 0) == 3,
+                        5000);
+                waitUntil(
+                        () ->
+                                "x"
+                                        .equals(
+                                                new String(
+                                                        followerLogManager
+                                                                .read("replica-grpc", 0, 0, 4096)
+                                                                .records(),
+                                                        StandardCharsets.UTF_8)),
                         5000);
                 assertTrue(resultRegistry.latestReport(2).get(0).getSuccess());
                 assertEquals(3, followerLogManager.leaderEpoch("replica-grpc", 0));

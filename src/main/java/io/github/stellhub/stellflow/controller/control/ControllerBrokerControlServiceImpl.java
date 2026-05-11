@@ -31,6 +31,7 @@ public class ControllerBrokerControlServiceImpl
     private final ControllerAssignmentRegistry assignmentRegistry;
     private final ControllerPartitionControlRegistry partitionControlRegistry;
     private final PartitionControlResultRegistry partitionControlResultRegistry;
+    private final ControllerMetadataCommandService metadataCommandService;
     private final ControllerMetadataStateMachine metadataStateMachine;
     private final ControllerReplicaCoordinator replicaCoordinator;
     private final String clusterId;
@@ -39,12 +40,14 @@ public class ControllerBrokerControlServiceImpl
             ControllerAssignmentRegistry assignmentRegistry,
             ControllerPartitionControlRegistry partitionControlRegistry,
             PartitionControlResultRegistry partitionControlResultRegistry,
+            ControllerMetadataCommandService metadataCommandService,
             ControllerMetadataStateMachine metadataStateMachine,
             ControllerReplicaCoordinator replicaCoordinator,
             String clusterId) {
         this.assignmentRegistry = assignmentRegistry;
         this.partitionControlRegistry = partitionControlRegistry;
         this.partitionControlResultRegistry = partitionControlResultRegistry;
+        this.metadataCommandService = metadataCommandService;
         this.metadataStateMachine = metadataStateMachine;
         this.replicaCoordinator = replicaCoordinator;
         this.clusterId = clusterId;
@@ -59,17 +62,26 @@ public class ControllerBrokerControlServiceImpl
                 request.getBrokerId(),
                 request.getAdvertisedHost(),
                 request.getAdvertisedPort());
-        metadataStateMachine.registerBroker(
-                request.getBrokerId(),
-                "stellflow://" + request.getAdvertisedHost() + ":" + request.getAdvertisedPort(),
-                request.getAdvertisedHost(),
-                request.getAdvertisedPort());
-        responseObserver.onNext(
-                BrokerRegistrationResponse.newBuilder()
-                        .setAccepted(true)
-                        .setClusterId(clusterId)
-                        .build());
-        responseObserver.onCompleted();
+        try {
+            metadataCommandService.registerBroker(
+                    request.getBrokerId(),
+                    "stellflow://"
+                            + request.getAdvertisedHost()
+                            + ":"
+                            + request.getAdvertisedPort(),
+                    request.getAdvertisedHost(),
+                    request.getAdvertisedPort(),
+                    System.currentTimeMillis());
+            responseObserver.onNext(
+                    BrokerRegistrationResponse.newBuilder()
+                            .setAccepted(true)
+                            .setClusterId(clusterId)
+                            .build());
+            responseObserver.onCompleted();
+        } catch (RuntimeException exception) {
+            log.error("Failed to register broker via metadata command service", exception);
+            responseObserver.onError(exception);
+        }
     }
 
     @Override

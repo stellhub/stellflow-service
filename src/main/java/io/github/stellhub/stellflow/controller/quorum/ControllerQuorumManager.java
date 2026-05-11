@@ -1,0 +1,188 @@
+package io.github.stellhub.stellflow.controller.quorum;
+
+import io.github.stellhub.stellflow.config.EndpointParser;
+import io.github.stellhub.stellflow.controller.control.ControllerMetadataCommandService;
+import io.github.stellhub.stellflow.controller.control.ControllerMetadataStateMachine;
+import io.github.stellhub.stellflow.controller.control.ControllerPartitionMetadata;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.util.List;
+import java.util.UUID;
+import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.ratis.RaftConfigKeys;
+import org.apache.ratis.client.RaftClient;
+import org.apache.ratis.conf.Parameters;
+import org.apache.ratis.conf.RaftProperties;
+import org.apache.ratis.grpc.GrpcConfigKeys;
+import org.apache.ratis.protocol.Message;
+import org.apache.ratis.protocol.RaftGroup;
+import org.apache.ratis.protocol.RaftGroupId;
+import org.apache.ratis.protocol.RaftPeer;
+import org.apache.ratis.protocol.RaftPeerId;
+import org.apache.ratis.protocol.RaftClientReply;
+import org.apache.ratis.rpc.SupportedRpcType;
+import org.apache.ratis.server.RaftServer;
+import org.apache.ratis.server.RaftServerConfigKeys;
+import org.apache.ratis.thirdparty.com.google.protobuf.ByteString;
+import org.apache.ratis.util.TimeDuration;
+
+/**
+ * Controller quorum 管理器。
+ */
+@Slf4j
+public class ControllerQuorumManager implements ControllerMetadataCommandService {
+
+    private final ControllerQuorumConfig config;
+    private final ControllerMetadataStateMachine metadataStateMachine;
+    private final ControllerRaftStateMachine raftStateMachine;
+    @Getter private final RaftGroup raftGroup;
+    @Getter private final RaftPeer selfPeer;
+    private final RaftProperties raftProperties;
+    private final Parameters parameters;
+    private RaftServer raftServer;
+    private RaftClient raftClient;
+
+    public ControllerQuorumManager(
+            ControllerQuorumConfig config, ControllerMetadataStateMachine metadataStateMachine) {
+        this.config = config;
+        this.metadataStateMachine = metadataStateMachine;
+        this.raftStateMachine = new ControllerRaftStateMachine(metadataStateMachine);
+        this.raftGroup = buildGroup(config);
+        this.selfPeer =
+                raftGroup.getPeer(RaftPeerId.valueOf(config.getSelfId()));
+        if (selfPeer == null) {
+            throw new IllegalArgumentException(
+                    "Controller quorum peers do not contain selfId=" + config.getSelfId());
+        }
+        this.raftProperties = buildRaftProperties(config);
+        this.parameters = new Parameters();
+    }
+
+    /**
+     * 启动 controller quorum。
+     */
+    public synchronized void start() {
+        if (!config.isEnabled() || raftServer != null) {
+            return;
+        }
+        try {
+            Files.createDirectories(config.getStorageDir());
+            raftServer =
+                    RaftServer.newBuilder()
+                            .setServerId(selfPeer.getId())
+                            .setGroup(raftGroup)
+                            .setStateMachine(raftStateMachine)
+                            .setProperties(raftProperties)
+                            .setParameters(parameters)
+                            .build();
+            raftServer.start();
+            raftClient =
+                    RaftClient.newBuilder()
+                            .setRaftGroup(raftGroup)
+                            .setProperties(raftProperties)
+                            .setParameters(parameters)
+                            .build();
+            log.info(
+                    "Controller quorum started selfId={} endpoint={} peers={}",
+                    config.getSelfId(),
+                    config.getEndpoint(),
+                    config.getPeers());
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to start controller quorum", exception);
+        }
+    }
+
+    /**
+     * 提交 broker 注册记录。
+     */
+    @Override
+    public void registerBroker(
+            int brokerId,
+            String advertisedEndpoint,
+            String advertisedHost,
+            int advertisedPort,
+            long registeredAtMs) {
+        submit(
+                ControllerMetadataRecord.registerBroker(
+                        brokerId, advertisedEndpoint, advertisedHost, advertisedPort, registeredAtMs));
+    }
+
+    /**
+     * 提交单分区 upsert 记录。
+     */
+    @Override
+    public void upsertPartition(ControllerPartitionMetadata metadata) {
+        submit(ControllerMetadataRecord.upsertPartition(metadata));
+    }
+
+    /**
+     * 提交单分区删除记录。
+     */
+    @Override
+    public void removePartition(String topic, int partition) {
+        submit(ControllerMetadataRecord.removePartition(topic, partition));
+    }
+
+    /**
+     * 关闭 controller quorum。
+     */
+    @Override
+    public synchronized void close() {
+        if (raftClient != null) {
+            try {
+                raftClient.close();
+            } catch (IOException exception) {
+                log.warn("Failed to close controller quorum client cleanly", exception);
+            } finally {
+                raftClient = null;
+            }
+        }
+        if (raftServer != null) {
+            try {
+                raftServer.close();
+            } catch (IOException exception) {
+                log.warn("Failed to close controller quorum server cleanly", exception);
+            } finally {
+                raftServer = null;
+            }
+        }
+    }
+
+    private void submit(ControllerMetadataRecord record) {
+        if (!config.isEnabled()) {
+            throw new IllegalStateException("Controller quorum is not enabled");
+        }
+        if (raftClient == null) {
+            throw new IllegalStateException("Controller quorum has not been started");
+        }
+        try {
+            byte[] bytes = ControllerMetadataRecordCodec.encode(record);
+            RaftClientReply reply = raftClient.io().send(Message.valueOf(ByteString.copyFrom(bytes)));
+            if (!reply.isSuccess()) {
+                throw new IllegalStateException(
+                        "Controller quorum rejected metadata record: " + reply.getException());
+            }
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to submit controller metadata record", exception);
+        }
+    }
+
+    private static RaftGroup buildGroup(ControllerQuorumConfig config) {
+        List<RaftPeer> peers =
+                config.parsedPeers().stream().map(ControllerQuorumPeer::toRaftPeer).toList();
+        return RaftGroup.valueOf(RaftGroupId.valueOf(UUID.fromString(config.getGroupId())), peers);
+    }
+
+    private static RaftProperties buildRaftProperties(ControllerQuorumConfig config) {
+        RaftProperties properties = new RaftProperties();
+        EndpointParser.ParsedEndpoint endpoint = config.parsedSelfEndpoint();
+        RaftConfigKeys.Rpc.setType(properties, SupportedRpcType.GRPC);
+        GrpcConfigKeys.Server.setHost(properties, endpoint.host());
+        GrpcConfigKeys.Server.setPort(properties, endpoint.port());
+        RaftServerConfigKeys.setStorageDir(properties, List.of(config.getStorageDir().toFile()));
+        RaftServerConfigKeys.Rpc.setRequestTimeout(
+                properties, TimeDuration.valueOf(config.getRequestTimeoutMs(), java.util.concurrent.TimeUnit.MILLISECONDS));
+        return properties;
+    }
+}
