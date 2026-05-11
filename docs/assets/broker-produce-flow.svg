@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="390" viewBox="0 0 1320 390">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#edf2ff"/>
+      <stop offset="50%" stop-color="#dbe4ff"/>
+      <stop offset="100%" stop-color="#bac8ff"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#1d3557"/>
+    </marker>
+    <style>
+      .title { font: 700 24px Arial, sans-serif; fill: #1f2933; }
+      .box { fill: #f1f5ff; stroke: #1d3557; stroke-width: 2; rx: 14; ry: 14; }
+      .decision { fill: #fff4cc; stroke: #d97706; stroke-width: 2; }
+      .text { font: 16px Arial, sans-serif; fill: #1d3557; }
+      .small { font: 14px Arial, sans-serif; fill: #486581; }
+      .line { stroke: #1d3557; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect x="0" y="0" width="1320" height="390" fill="url(#bg)"/>
+  <text x="40" y="40" class="title">Stellflow Broker Produce Flow</text>
+  <rect x="40" y="90" width="170" height="60" class="box"/>
+  <text x="71" y="126" class="text">ProduceRequest</text>
+  <rect x="250" y="90" width="180" height="60" class="box"/>
+  <text x="286" y="118" class="text">Auth / ACL</text>
+  <text x="272" y="138" class="small">quota and leader check</text>
+  <rect x="470" y="90" width="170" height="60" class="box"/>
+  <text x="491" y="126" class="text">Route Partitions</text>
+  <rect x="680" y="90" width="200" height="60" class="box"/>
+  <text x="705" y="118" class="text">ReplicaManager</text>
+  <text x="726" y="138" class="small">appendRecords</text>
+  <rect x="920" y="90" width="170" height="60" class="box"/>
+  <text x="959" y="126" class="text">Partition</text>
+  <rect x="1130" y="90" width="150" height="60" class="box"/>
+  <text x="1160" y="126" class="text">UnifiedLog</text>
+  <polygon points="1005,220 1095,250 1005,280 915,250" class="decision"/>
+  <text x="944" y="255" class="text">Ack Satisfied?</text>
+  <rect x="700" y="220" width="170" height="60" class="box"/>
+  <text x="722" y="248" class="text">DelayedProduce</text>
+  <rect x="470" y="220" width="170" height="60" class="box"/>
+  <text x="496" y="248" class="text">Build Result</text>
+  <rect x="250" y="220" width="170" height="60" class="box"/>
+  <text x="274" y="248" class="text">Encode Response</text>
+  <rect x="40" y="220" width="170" height="60" class="box"/>
+  <text x="90" y="248" class="text">Send Back</text>
+  <path d="M210 120 H250" class="line"/>
+  <path d="M430 120 H470" class="line"/>
+  <path d="M640 120 H680" class="line"/>
+  <path d="M880 120 H920" class="line"/>
+  <path d="M1090 120 H1130" class="line"/>
+  <path d="M1205 150 V190 H1005" class="line"/>
+  <path d="M915 250 H870" class="line"/>
+  <path d="M700 250 H640" class="line"/>
+  <path d="M470 250 H420" class="line"/>
+  <path d="M250 250 H210" class="line"/>
+  <path d="M1005 280 V320 H555 V280" class="line"/>
+  <text x="1110" y="180" class="small">append ok</text>
+  <text x="914" y="305" class="small">Yes</text>
+  <text x="878" y="240" class="small">No</text>
+</svg>

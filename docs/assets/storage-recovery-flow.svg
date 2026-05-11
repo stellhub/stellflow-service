@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="420" viewBox="0 0 1280 420">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fff0f6"/>
+      <stop offset="50%" stop-color="#f8edff"/>
+      <stop offset="100%" stop-color="#eebefa"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#3d405b"/>
+    </marker>
+    <style>
+      .title { font: 700 24px Arial, sans-serif; fill: #1f2933; }
+      .box { fill: #f8f5ff; stroke: #3d405b; stroke-width: 2; rx: 14; ry: 14; }
+      .decision { fill: #fff2cc; stroke: #bc6c25; stroke-width: 2; }
+      .text { font: 16px Arial, sans-serif; fill: #243b53; }
+      .small { font: 14px Arial, sans-serif; fill: #52606d; }
+      .line { stroke: #3d405b; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect x="0" y="0" width="1280" height="420" fill="url(#bg)"/>
+  <text x="40" y="40" class="title">Stellflow Storage Recovery Flow</text>
+  <rect x="40" y="90" width="180" height="60" class="box"/>
+  <text x="76" y="126" class="text">Scan Log Dirs</text>
+  <rect x="270" y="90" width="200" height="60" class="box"/>
+  <text x="302" y="118" class="text">Sort Segments</text>
+  <text x="293" y="138" class="small">by baseOffset ascending</text>
+  <rect x="520" y="90" width="220" height="60" class="box"/>
+  <text x="549" y="118" class="text">Check Data/Index</text>
+  <text x="553" y="138" class="small">orphan/temp/corruption</text>
+  <polygon points="850,90 940,120 850,150 760,120" class="decision"/>
+  <text x="791" y="125" class="text">Index Valid?</text>
+  <rect x="1010" y="90" width="200" height="60" class="box"/>
+  <text x="1040" y="118" class="text">Load Segment</text>
+  <text x="1033" y="138" class="small">timestamps and offsets</text>
+  <rect x="780" y="230" width="180" height="60" class="box"/>
+  <text x="809" y="258" class="text">Rebuild Index</text>
+  <text x="811" y="278" class="small">from log records</text>
+  <polygon points="620,230 710,260 620,290 530,260" class="decision"/>
+  <text x="562" y="265" class="text">Tail Broken?</text>
+  <rect x="290" y="230" width="180" height="60" class="box"/>
+  <text x="329" y="258" class="text">Truncate Tail</text>
+  <text x="317" y="278" class="small">drop partial batch</text>
+  <rect x="60" y="230" width="170" height="60" class="box"/>
+  <text x="86" y="258" class="text">Recompute LEO</text>
+  <text x="91" y="278" class="small">recovery point</text>
+  <rect x="60" y="330" width="240" height="60" class="box"/>
+  <text x="96" y="358" class="text">Build UnifiedLog</text>
+  <text x="87" y="378" class="small">register into LogManager</text>
+  <path d="M220 120 H270" class="line"/>
+  <path d="M470 120 H520" class="line"/>
+  <path d="M740 120 H760" class="line"/>
+  <path d="M940 120 H1010" class="line"/>
+  <path d="M850 150 V230" class="line"/>
+  <path d="M780 260 H710" class="line"/>
+  <path d="M530 260 H470" class="line"/>
+  <path d="M290 260 H230" class="line"/>
+  <path d="M145 290 V330" class="line"/>
+  <path d="M1010 150 V200 H620" class="line"/>
+  <text x="946" y="110" class="small">Yes</text>
+  <text x="860" y="195" class="small">No</text>
+  <text x="468" y="250" class="small">Yes</text>
+  <path d="M620 290 V320 H145" class="line"/>
+  <text x="550" y="312" class="small">No</text>
+</svg>

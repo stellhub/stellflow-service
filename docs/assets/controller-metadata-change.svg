@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="390" viewBox="0 0 1320 390">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f3f0ff"/>
+      <stop offset="50%" stop-color="#e5dbff"/>
+      <stop offset="100%" stop-color="#d0bfff"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#5a189a"/>
+    </marker>
+    <style>
+      .title { font: 700 24px Arial, sans-serif; fill: #240046; }
+      .box { fill: #f8f0ff; stroke: #5a189a; stroke-width: 2; rx: 14; ry: 14; }
+      .text { font: 16px Arial, sans-serif; fill: #240046; }
+      .small { font: 14px Arial, sans-serif; fill: #5c4d7d; }
+      .line { stroke: #5a189a; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect x="0" y="0" width="1320" height="390" fill="url(#bg)"/>
+  <text x="40" y="40" class="title">Stellflow Controller Metadata Change Flow</text>
+  <rect x="40" y="100" width="170" height="60" class="box"/>
+  <text x="86" y="136" class="text">Control Command</text>
+  <rect x="250" y="100" width="180" height="60" class="box"/>
+  <text x="279" y="128" class="text">Validate State</text>
+  <text x="267" y="148" class="small">current cluster view</text>
+  <rect x="470" y="100" width="180" height="60" class="box"/>
+  <text x="491" y="128" class="text">Build Records</text>
+  <text x="507" y="148" class="small">metadata events</text>
+  <rect x="690" y="100" width="190" height="60" class="box"/>
+  <text x="723" y="128" class="text">Quorum Append</text>
+  <text x="709" y="148" class="small">replicated metadata log</text>
+  <rect x="920" y="100" width="170" height="60" class="box"/>
+  <text x="958" y="136" class="text">Commit Record</text>
+  <rect x="1130" y="100" width="150" height="60" class="box"/>
+  <text x="1156" y="136" class="text">Replay Log</text>
+  <rect x="920" y="230" width="170" height="60" class="box"/>
+  <text x="949" y="258" class="text">Update Managers</text>
+  <rect x="690" y="230" width="170" height="60" class="box"/>
+  <text x="726" y="258" class="text">Build Delta</text>
+  <rect x="470" y="230" width="170" height="60" class="box"/>
+  <text x="493" y="258" class="text">Broadcast Delta</text>
+  <rect x="250" y="230" width="170" height="60" class="box"/>
+  <text x="290" y="258" class="text">Broker Apply</text>
+  <path d="M210 130 H250" class="line"/>
+  <path d="M430 130 H470" class="line"/>
+  <path d="M650 130 H690" class="line"/>
+  <path d="M880 130 H920" class="line"/>
+  <path d="M1090 130 H1130" class="line"/>
+  <path d="M1205 160 V230 H1090" class="line"/>
+  <path d="M920 260 H860" class="line"/>
+  <path d="M690 260 H640" class="line"/>
+  <path d="M470 260 H420" class="line"/>
+</svg>

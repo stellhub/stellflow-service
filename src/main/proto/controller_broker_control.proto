@@ -1,0 +1,202 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "io.github.stellhub.stellflow.controlplane";
+option java_outer_classname = "ControllerBrokerControlProto";
+
+package stellflow.controlplane;
+
+// Broker 启动后向 controller 发送的注册请求。
+// 这是控制面会话建立的第一步，只携带最小必要的对外访问地址信息。
+message BrokerRegistrationRequest {
+  // broker 的逻辑节点编号。
+  // 该值必须在集群内唯一，controller 会用它做 assignment 和 partition control 的目标定位。
+  int32 broker_id = 1;
+
+  // broker 对外广告的主机名或 IP。
+  // 这里表达的是“其他 broker / client 应该连到哪里”，不是本地 bind host。
+  string advertised_host = 2;
+
+  // broker 对外广告的数据面端口。
+  // 必须是可被 follower / client 访问的真实端口。
+  int32 advertised_port = 3;
+}
+
+// broker 注册结果。
+message BrokerRegistrationResponse {
+  // controller 是否接受此次注册。
+  // 当前骨架默认返回 true，后续可扩展为鉴权失败、重复 brokerId 等拒绝场景。
+  bool accepted = 1;
+
+  // 当前集群标识。
+  // 用于 broker 侧确认自己连到的是预期 controller 集群。
+  string cluster_id = 2;
+}
+
+// broker 侧订阅 replica assignment 快照时发送的请求。
+message ReplicaAssignmentWatchRequest {
+  // 目标 brokerId。
+  // watch 流只会收到发给这个 broker 的 assignment 快照。
+  int32 broker_id = 1;
+}
+
+// 单个分区复制抓取 assignment。
+// 该对象只描述“follower 应该去哪个 leader 拉哪个分区”，不直接承载分区控制命令。
+message ReplicaAssignment {
+  // 目标 topic 名称。
+  string topic = 1;
+
+  // 目标 partition 编号。
+  int32 partition = 2;
+
+  // leader broker 对外广告的主机名或 IP。
+  // follower 会基于这个地址发起自定义二进制 Replica Fetch。
+  string leader_host = 3;
+
+  // leader broker 对外广告的数据面端口。
+  int32 leader_port = 4;
+
+  // leader broker 的逻辑节点编号。
+  int32 leader_broker_id = 5;
+}
+
+// assignment 流中的一次全量快照事件。
+message ReplicaAssignmentEvent {
+  // controller 生成 assignment 快照的版本号。
+  // 该值单调递增，用于调试和排障，不要求 broker 侧持久化。
+  int64 version = 1;
+
+  // 当前 broker 应用的 assignment 全量列表。
+  // 这是一个“快照”而不是“增量补丁”。
+  repeated ReplicaAssignment assignments = 2;
+}
+
+// 发给 broker 的单分区控制命令。
+// 该命令负责把“控制面期望状态”投递给 broker 本地的 replica/storage 状态机。
+message PartitionControlCommandMessage {
+  // 目标 topic。
+  string topic = 1;
+
+  // 目标 partition。
+  int32 partition = 2;
+
+  // 当前期望 leader 的 brokerId。
+  // broker 会用它更新本地分区拓扑，并决定自己是 leader 还是 follower。
+  int32 leader_id = 3;
+
+  // 当前分区期望 leaderEpoch。
+  // 必须单调递增，用于区分新旧 leader 代次和驱动更细粒度截断恢复。
+  int32 leader_epoch = 4;
+
+  // 期望的 replica 集合。
+  // 这是控制面对该分区副本拓扑的完整视图。
+  repeated int32 replica_nodes = 5;
+
+  // 期望的 ISR 集合。
+  // broker 会据此约束 highWatermark 推进语义和复制确认边界。
+  repeated int32 isr_nodes = 6;
+
+  // 是否显式携带 truncateToLeaderEpoch。
+  // proto3 的标量字段默认值无法区分“未设置”和“设置为 0”，因此用显式布尔位保留语义边界。
+  bool has_truncate_to_leader_epoch = 7;
+
+  // 如果 has_truncate_to_leader_epoch=true，表示 broker 需要按 epoch 分叉点截断本地日志。
+  int32 truncate_to_leader_epoch = 8;
+
+  // 是否显式携带 truncateToOffset。
+  // 与上面的 leaderEpoch 截断类似，用于区分是否真的存在一次性 offset 截断命令。
+  bool has_truncate_to_offset = 9;
+
+  // 如果 has_truncate_to_offset=true，表示 broker 需要把本地日志强制截断到该 offset。
+  int64 truncate_to_offset = 10;
+}
+
+// controller 侧主动批量调用 broker 本地状态机时的命令集合。
+// 当前系统更常用的是 watch 流下发，但保留该 RPC 便于补充同步式控制场景。
+message PartitionControlBatchRequest {
+  // 一次批量控制请求中的所有分区命令。
+  repeated PartitionControlCommandMessage commands = 1;
+}
+
+// 批量分区控制的响应。
+message PartitionControlBatchResponse {
+  // 本次请求中 controller 侧认为已经成功提交到 broker 本地状态机的命令数量。
+  int32 applied_count = 1;
+}
+
+// broker 订阅 partition control 命令流时发送的请求。
+message PartitionControlWatchRequest {
+  // 目标 brokerId。
+  // controller 只会下发属于该 broker 的控制命令快照。
+  int32 broker_id = 1;
+}
+
+// partition control 的一次全量快照事件。
+message PartitionControlCommandEvent {
+  // 控制命令快照版本号。
+  // 用于帮助 broker 与 controller 排查“谁拿到了哪一版控制状态”。
+  int64 version = 1;
+
+  // 当前 broker 应应用的全量控制命令列表。
+  // 这是快照语义，不是增量 patch。
+  repeated PartitionControlCommandMessage commands = 2;
+}
+
+// broker 对 controller 回报的单条 partition control 应用结果。
+message PartitionControlApplyResult {
+  // 结果对应的 topic。
+  string topic = 1;
+
+  // 结果对应的 partition。
+  int32 partition = 2;
+
+  // broker 应用时看到的 leaderEpoch。
+  // 用于帮助 controller 识别这条结果属于哪一代控制命令。
+  int32 leader_epoch = 3;
+
+  // 该命令是否应用成功。
+  bool success = 4;
+
+  // 应用结果描述。
+  // 失败时可带异常摘要，成功时可填 "applied" 一类短消息。
+  string message = 5;
+
+  // broker 本地完成应用的毫秒时间戳。
+  // 便于 controller 做时序审计与排障。
+  int64 applied_at_ms = 6;
+}
+
+// broker 一次批量结果上报请求。
+message PartitionControlReportRequest {
+  // 结果上报来源 brokerId。
+  int32 broker_id = 1;
+
+  // 当前批次中的所有结果。
+  repeated PartitionControlApplyResult results = 2;
+}
+
+// controller 对结果上报的确认。
+message PartitionControlReportResponse {
+  // controller 接受的成功结果数量。
+  // 当前骨架中是 success=true 的条目数，后续可扩展成更复杂的确认语义。
+  int32 accepted_count = 1;
+}
+
+// Controller/Broker 控制面服务。
+// 这里承载的是控制面元数据协商与命令分发，不承载数据面 Produce/Fetch 流量。
+service ControllerBrokerControlService {
+  // broker 启动后先调用该 RPC 完成注册。
+  rpc RegisterBroker(BrokerRegistrationRequest) returns (BrokerRegistrationResponse);
+
+  // broker 通过流式 watch 持续接收 replica assignment 全量快照。
+  rpc WatchReplicaAssignments(ReplicaAssignmentWatchRequest) returns (stream ReplicaAssignmentEvent);
+
+  // broker 通过流式 watch 持续接收 partition control 全量快照。
+  rpc WatchPartitionControlCommands(PartitionControlWatchRequest) returns (stream PartitionControlCommandEvent);
+
+  // broker 应用 partition control 命令后，把结果异步回报给 controller。
+  rpc ReportPartitionControlResults(PartitionControlReportRequest) returns (PartitionControlReportResponse);
+
+  // controller 侧的同步式批量控制入口。
+  rpc ApplyPartitionControl(PartitionControlBatchRequest) returns (PartitionControlBatchResponse);
+}

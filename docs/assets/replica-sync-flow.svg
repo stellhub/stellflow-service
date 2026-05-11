@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1340" height="400" viewBox="0 0 1340 400">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ebfbee"/>
+      <stop offset="50%" stop-color="#d3f9d8"/>
+      <stop offset="100%" stop-color="#b2f2bb"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#386641"/>
+    </marker>
+    <style>
+      .title { font: 700 24px Arial, sans-serif; fill: #1b4332; }
+      .box { fill: #f1fff5; stroke: #386641; stroke-width: 2; rx: 14; ry: 14; }
+      .decision { fill: #fff3c4; stroke: #bc6c25; stroke-width: 2; }
+      .text { font: 16px Arial, sans-serif; fill: #1b4332; }
+      .small { font: 14px Arial, sans-serif; fill: #52796f; }
+      .line { stroke: #386641; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect x="0" y="0" width="1340" height="400" fill="url(#bg)"/>
+  <text x="40" y="40" class="title">Stellflow Replica Sync Flow</text>
+  <rect x="40" y="90" width="180" height="60" class="box"/>
+  <text x="71" y="126" class="text">ReplicaFetcherThread</text>
+  <rect x="260" y="90" width="170" height="60" class="box"/>
+  <text x="302" y="126" class="text">Build Fetch</text>
+  <rect x="470" y="90" width="170" height="60" class="box"/>
+  <text x="507" y="126" class="text">Leader Broker</text>
+  <rect x="680" y="90" width="180" height="60" class="box"/>
+  <text x="703" y="118" class="text">Validate Epoch</text>
+  <text x="702" y="138" class="small">and fetch range</text>
+  <rect x="900" y="90" width="180" height="60" class="box"/>
+  <text x="935" y="126" class="text">Read Records</text>
+  <polygon points="1190,90 1280,120 1190,150 1100,120" class="decision"/>
+  <text x="1120" y="125" class="text">Need Truncate?</text>
+  <rect x="1080" y="240" width="180" height="60" class="box"/>
+  <text x="1119" y="268" class="text">Truncate Local</text>
+  <rect x="850" y="240" width="180" height="60" class="box"/>
+  <text x="878" y="268" class="text">Append Follower</text>
+  <rect x="620" y="240" width="180" height="60" class="box"/>
+  <text x="646" y="268" class="text">Update Fetch Offset</text>
+  <rect x="390" y="240" width="180" height="60" class="box"/>
+  <text x="417" y="268" class="text">Report Progress</text>
+  <rect x="160" y="240" width="180" height="60" class="box"/>
+  <text x="187" y="268" class="text">Leader Update ISR</text>
+  <path d="M220 120 H260" class="line"/>
+  <path d="M430 120 H470" class="line"/>
+  <path d="M640 120 H680" class="line"/>
+  <path d="M860 120 H900" class="line"/>
+  <path d="M1080 120 H1100" class="line"/>
+  <path d="M1190 150 V240" class="line"/>
+  <path d="M1080 270 H1030" class="line"/>
+  <path d="M850 270 H800" class="line"/>
+  <path d="M620 270 H570" class="line"/>
+  <path d="M390 270 H340" class="line"/>
+  <path d="M1100 120 H1080 V210 H940" class="line"/>
+  <text x="1284" y="120" class="small">Yes</text>
+  <text x="1040" y="204" class="small">No</text>
+</svg>

@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="360" viewBox="0 0 1180 360">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fff4e6"/>
+      <stop offset="50%" stop-color="#ffe8cc"/>
+      <stop offset="100%" stop-color="#ffd8a8"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#7c2d12"/>
+    </marker>
+    <style>
+      .title { font: 700 24px Arial, sans-serif; fill: #1f2933; }
+      .box { fill: #fff7ed; stroke: #9a3412; stroke-width: 2; rx: 14; ry: 14; }
+      .decision { fill: #ffedd5; stroke: #c2410c; stroke-width: 2; }
+      .text { font: 16px Arial, sans-serif; fill: #431407; }
+      .small { font: 14px Arial, sans-serif; fill: #7c2d12; }
+      .line { stroke: #9a3412; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect x="0" y="0" width="1180" height="360" fill="url(#bg)"/>
+  <text x="40" y="40" class="title">Stellflow Storage Cleanup Flow</text>
+  <rect x="40" y="90" width="180" height="60" class="box"/>
+  <text x="66" y="126" class="text">Background Scan</text>
+  <rect x="270" y="90" width="210" height="60" class="box"/>
+  <text x="299" y="118" class="text">Select Old Segments</text>
+  <text x="309" y="138" class="small">time or size retention</text>
+  <polygon points="590,90 680,120 590,150 500,120" class="decision"/>
+  <text x="531" y="125" class="text">Safe Delete?</text>
+  <rect x="760" y="90" width="190" height="60" class="box"/>
+  <text x="790" y="118" class="text">Mark Deleted</text>
+  <text x="790" y="138" class="small">delay physical remove</text>
+  <rect x="760" y="220" width="190" height="60" class="box"/>
+  <text x="796" y="248" class="text">Detach Segment</text>
+  <text x="780" y="268" class="small">remove from live set</text>
+  <rect x="510" y="220" width="180" height="60" class="box"/>
+  <text x="544" y="248" class="text">Delete Files</text>
+  <text x="533" y="268" class="small">after grace interval</text>
+  <rect x="270" y="220" width="180" height="60" class="box"/>
+  <text x="303" y="248" class="text">Update Metrics</text>
+  <text x="305" y="268" class="small">retention statistics</text>
+  <rect x="40" y="220" width="170" height="60" class="box"/>
+  <text x="82" y="248" class="text">Finish Round</text>
+  <path d="M220 120 H270" class="line"/>
+  <path d="M480 120 H500" class="line"/>
+  <path d="M680 120 H760" class="line"/>
+  <path d="M855 150 V220" class="line"/>
+  <path d="M760 250 H690" class="line"/>
+  <path d="M510 250 H450" class="line"/>
+  <path d="M270 250 H210" class="line"/>
+  <path d="M590 150 V190 H125" class="line"/>
+  <text x="690" y="112" class="small">Yes</text>
+  <text x="544" y="182" class="small">No, keep segment</text>
+</svg>

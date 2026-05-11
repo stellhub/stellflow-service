@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="390" viewBox="0 0 1320 390">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fff5f5"/>
+      <stop offset="50%" stop-color="#ffe3e3"/>
+      <stop offset="100%" stop-color="#ffc9c9"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#9d0208"/>
+    </marker>
+    <style>
+      .title { font: 700 24px Arial, sans-serif; fill: #6a040f; }
+      .box { fill: #fff5f5; stroke: #9d0208; stroke-width: 2; rx: 14; ry: 14; }
+      .decision { fill: #fff3bf; stroke: #bc6c25; stroke-width: 2; }
+      .text { font: 16px Arial, sans-serif; fill: #6a040f; }
+      .small { font: 14px Arial, sans-serif; fill: #7d4e57; }
+      .line { stroke: #9d0208; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect x="0" y="0" width="1320" height="390" fill="url(#bg)"/>
+  <text x="40" y="40" class="title">Stellflow Leader Failover Flow</text>
+  <rect x="40" y="90" width="190" height="60" class="box"/>
+  <text x="73" y="126" class="text">Heartbeat Timeout</text>
+  <rect x="270" y="90" width="180" height="60" class="box"/>
+  <text x="311" y="126" class="text">Find Partitions</text>
+  <polygon points="560,90 650,120 560,150 470,120" class="decision"/>
+  <text x="512" y="125" class="text">ISR Exists?</text>
+  <rect x="730" y="90" width="180" height="60" class="box"/>
+  <text x="757" y="118" class="text">Select Leader</text>
+  <text x="761" y="138" class="small">new leader and epoch</text>
+  <rect x="950" y="90" width="180" height="60" class="box"/>
+  <text x="981" y="126" class="text">Write Metadata</text>
+  <rect x="950" y="230" width="180" height="60" class="box"/>
+  <text x="989" y="258" class="text">Broker Apply</text>
+  <rect x="720" y="230" width="180" height="60" class="box"/>
+  <text x="748" y="258" class="text">New Leader Open</text>
+  <rect x="490" y="230" width="180" height="60" class="box"/>
+  <text x="522" y="258" class="text">Old Leader Fenced</text>
+  <rect x="260" y="230" width="180" height="60" class="box"/>
+  <text x="289" y="258" class="text">Follower Catch Up</text>
+  <path d="M230 120 H270" class="line"/>
+  <path d="M450 120 H470" class="line"/>
+  <path d="M650 120 H730" class="line"/>
+  <path d="M910 120 H950" class="line"/>
+  <path d="M1040 150 V230" class="line"/>
+  <path d="M950 260 H900" class="line"/>
+  <path d="M720 260 H670" class="line"/>
+  <path d="M490 260 H440" class="line"/>
+  <path d="M560 150 V190 H350" class="line"/>
+  <text x="666" y="110" class="small">Yes</text>
+  <text x="510" y="185" class="small">No clean leader, stop or unclean policy</text>
+</svg>

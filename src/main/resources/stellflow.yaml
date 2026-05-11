@@ -1,0 +1,168 @@
+# Stellflow Netty transport defaults.
+# All keys can be overridden by:
+# 1. external yaml file: -Dstellflow.config.file=E:\deploy\stellflow.yaml
+# 2. system property: -Dstellflow.network.transport.port=19092
+
+stellflow:
+  storage:
+    log:
+      # Root directory for topic-partition log data.
+      # Each topic-partition creates its own subdirectory under this path.
+      # Tests can override this with a temporary directory to avoid polluting the repo.
+      rootDir: data/logs
+
+      # Maximum bytes for a single log segment file.
+      # When the active segment grows beyond this threshold, storage.log rolls to a new segment.
+      segmentBytes: 33554432
+
+      # Minimum byte distance between two sparse offset index entries.
+      # Smaller values create denser indexes with faster lookups but larger index files.
+      indexIntervalBytes: 4096
+
+      # Maximum number of segments retained for a single topic-partition.
+      # When the count is exceeded, the oldest fully rolled segments are deleted.
+      retentionSegments: 8
+
+      # Maximum age in milliseconds for retained rolled segments.
+      # Segments older than this threshold become eligible for cleanup.
+      retentionMs: 604800000
+
+      # Maximum total bytes retained for a single topic-partition.
+      # When the size exceeds this threshold, oldest rolled segments are deleted first.
+      retentionBytes: 1073741824
+
+  replica:
+    fetch:
+      # Whether to start the follower background fetch loop inside this broker process.
+      # Keep false for standalone local development; turn on for follower / replica role nodes.
+      enabled: false
+
+      # Logical broker id used when this node acts as a follower and sends Replica Fetch requests.
+      followerBrokerId: 1
+
+      # Poll interval in milliseconds for the follower background fetch loop.
+      # Smaller values reduce replication lag but increase request frequency.
+      pollIntervalMs: 500
+
+      # Read timeout for one Replica Fetch socket request.
+      socketTimeoutMs: 3000
+
+      # Connect timeout for establishing a socket to the leader broker.
+      connectTimeoutMs: 3000
+
+      # Maximum bytes requested in a single Replica Fetch round.
+      maxBytes: 4194304
+
+      # Maximum wait time passed to the leader side Fetch handler.
+      maxWaitMs: 500
+
+      # Minimum bytes passed to the leader side Fetch handler.
+      minBytes: 1
+
+      # Maximum chained fetch rounds executed on the same long-lived TCP connection
+      # during one scheduler wake-up. This is the current pipeline depth control.
+      pipelineRoundsPerPoll: 4
+
+      # Static assignment list used by the current fallback implementation.
+      # When controlPlane.grpc.clientEnabled=true, dynamic assignments from the controller
+      # override this local list.
+      # Format: topic:partition@stellflow://leaderHost:leaderPort#leaderBrokerId
+      # Legacy host:port format is still accepted for compatibility, but new configs
+      # should always prefer stellflow:// to make endpoint semantics explicit.
+      # Multiple assignments are separated by commas.
+      assignments: ""
+
+  controlPlane:
+    grpc:
+      # Whether this process also starts the controller-side gRPC server.
+      serverEnabled: false
+
+      # Bind host for the controller-side gRPC server.
+      serverHost: 0.0.0.0
+
+      # Bind port for the controller-side gRPC server.
+      serverPort: 19093
+
+      # Whether this broker should connect to the controller and watch dynamic assignments.
+      clientEnabled: false
+
+      # Controller host used by the broker-side gRPC client.
+      # New configs should prefer controllerEndpoint below. This field remains as a compatibility override.
+      controllerHost: 127.0.0.1
+
+      # Controller port used by the broker-side gRPC client.
+      # New configs should prefer controllerEndpoint below. This field remains as a compatibility override.
+      controllerPort: 19093
+
+      # Scheme-aware controller endpoint used by the broker-side gRPC client.
+      # This is a configuration/documentation URI only. The real gRPC wire protocol remains HTTP/2 over TCP,
+      # and no textual prefix is sent on the network.
+      controllerEndpoint: grpc://127.0.0.1:19093
+
+      # Logical broker id used for registration and assignment targeting.
+      brokerId: 1
+
+      # Advertised host sent to the controller during broker registration.
+      # New configs should prefer advertisedEndpoint below. This field remains as a compatibility override.
+      advertisedHost: 127.0.0.1
+
+      # Advertised port sent to the controller during broker registration.
+      # New configs should prefer advertisedEndpoint below. This field remains as a compatibility override.
+      advertisedPort: 9092
+
+      # Scheme-aware data-plane endpoint advertised to the controller and follower brokers.
+      # This only exists in config and metadata expression. The actual data-plane wire protocol
+      # stays as raw TCP + length-prefixed custom binary frames, without any textual prefix.
+      advertisedEndpoint: stellflow://127.0.0.1:9092
+
+      # Reconnect backoff when the assignment watch stream breaks.
+      watchReconnectBackoffMs: 1000
+
+      # Cluster id returned by the controller-side gRPC service.
+      clusterId: stellflow-dev-cluster
+
+  observability:
+    metrics:
+      http:
+        # Whether to expose a Prometheus scrape endpoint.
+        enabled: true
+
+        # Bind host for the metrics HTTP endpoint.
+        host: 0.0.0.0
+
+        # Bind port for the metrics HTTP endpoint.
+        port: 9464
+
+        # HTTP path for Prometheus scraping.
+        path: /metrics
+
+  network:
+    transport:
+      # Local bind host for the data-plane listener.
+      # Use 0.0.0.0 to listen on all interfaces, or 127.0.0.1 for local-only tests.
+      host: 0.0.0.0
+
+      # Local bind port for the data-plane listener.
+      # Default keeps Kafka-like ergonomics for local development.
+      port: 9092
+
+      # Netty boss event loop thread count.
+      # Usually 1 is enough because it only accepts new connections.
+      bossThreads: 1
+
+      # Netty worker event loop thread count.
+      # Handles socket read/write and pipeline callbacks.
+      # Tune this together with CPU core count and connection concurrency.
+      workerThreads: 4
+
+      # Socket receive buffer size in bytes.
+      # Large values help when receiving big batches or replica traffic.
+      soRcvBuf: 4194304
+
+      # Socket send buffer size in bytes.
+      # Large values help for Fetch and large batch responses.
+      soSndBuf: 4194304
+
+      # Maximum allowed frame length in bytes.
+      # Requests larger than this are rejected by the frame decoder.
+      maxFrameLength: 67108864

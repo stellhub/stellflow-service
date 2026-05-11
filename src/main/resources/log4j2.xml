@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="WARN" monitorInterval="30">
+    <Properties>
+        <Property name="logDir">logs</Property>
+        <Property name="logFile">stellflow.log</Property>
+        <Property name="pattern">%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%t] %c{1.} [corr=%X{correlationId} trace=%X{traceId} client=%X{clientId} tenant=%X{tenantId} trafficClass=%X{trafficClass} trafficTag=%X{trafficTag}] - %msg%n%throwable</Property>
+    </Properties>
+
+    <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout pattern="${pattern}" />
+        </Console>
+
+        <RollingFile
+                name="RollingFile"
+                fileName="${logDir}/${logFile}"
+                filePattern="${logDir}/archive/stellflow-%d{yyyy-MM-dd}-%i.log.gz">
+            <PatternLayout pattern="${pattern}" />
+            <Policies>
+                <TimeBasedTriggeringPolicy interval="1" modulate="true" />
+                <SizeBasedTriggeringPolicy size="128 MB" />
+            </Policies>
+            <DefaultRolloverStrategy max="30" />
+        </RollingFile>
+    </Appenders>
+
+    <Loggers>
+        <Root level="INFO">
+            <AppenderRef ref="Console" />
+            <AppenderRef ref="RollingFile" />
+        </Root>
+
+        <Logger name="io.github.stellhub.stellflow.network.transport" level="INFO" additivity="false">
+            <AppenderRef ref="Console" />
+            <AppenderRef ref="RollingFile" />
+        </Logger>
+
+        <Logger name="io.github.stellhub.stellflow.server.api" level="INFO" additivity="false">
+            <AppenderRef ref="Console" />
+            <AppenderRef ref="RollingFile" />
+        </Logger>
+    </Loggers>
+</Configuration>
