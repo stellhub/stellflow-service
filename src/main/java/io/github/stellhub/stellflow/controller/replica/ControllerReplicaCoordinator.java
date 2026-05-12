@@ -2,6 +2,7 @@ package io.github.stellhub.stellflow.controller.replica;
 
 import io.github.stellhub.stellflow.storage.log.LogManager;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Controller/Replica 协调适配层。
@@ -20,6 +21,17 @@ public class ControllerReplicaCoordinator {
     public PartitionControlApplyReport apply(PartitionControlCommand command) {
         long appliedAtMs = System.currentTimeMillis();
         try {
+            if (command.deletePartition()) {
+                logManager.deletePartition(command.topic(), command.partition());
+                return new PartitionControlApplyReport(
+                        command.topic(),
+                        command.partition(),
+                        command.leaderEpoch(),
+                        true,
+                        "deleted",
+                        appliedAtMs,
+                        true);
+            }
             logManager.updateLeaderEpoch(command.topic(), command.partition(), command.leaderEpoch());
             List<Integer> replicaNodes =
                     command.replicaNodes() == null || command.replicaNodes().isEmpty()
@@ -48,7 +60,8 @@ public class ControllerReplicaCoordinator {
                     command.leaderEpoch(),
                     true,
                     "applied",
-                    appliedAtMs);
+                    appliedAtMs,
+                    false);
         } catch (RuntimeException exception) {
             return new PartitionControlApplyReport(
                     command.topic(),
@@ -56,7 +69,41 @@ public class ControllerReplicaCoordinator {
                     command.leaderEpoch(),
                     false,
                     exception.getMessage(),
-                    appliedAtMs);
+                    appliedAtMs,
+                    command.deletePartition());
         }
+    }
+
+    /**
+     * 删除本地单分区数据。
+     */
+    public void deleteLocalPartition(String topic, int partition) {
+        logManager.deletePartition(topic, partition);
+    }
+
+    /**
+     * 查询单分区复制进度快照。
+     */
+    public Optional<PartitionReplicaProgress> partitionProgress(String topic, int partition) {
+        if (!logManager.containsPartition(topic, partition)) {
+            return Optional.empty();
+        }
+        return Optional.of(
+                new PartitionReplicaProgress(
+                        topic,
+                        partition,
+                        logManager.leaderId(topic, partition),
+                        logManager.leaderEpoch(topic, partition),
+                        logManager.logEndOffset(topic, partition),
+                        logManager.highWatermark(topic, partition),
+                        logManager.replicaNodes(topic, partition),
+                        logManager.isrNodes(topic, partition)));
+    }
+
+    /**
+     * 查询指定副本的复制进度。
+     */
+    public long replicaEndOffset(String topic, int partition, int brokerId) {
+        return logManager.replicaEndOffset(topic, partition, brokerId);
     }
 }

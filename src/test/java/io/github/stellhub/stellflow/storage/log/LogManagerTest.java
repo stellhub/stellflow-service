@@ -311,7 +311,8 @@ class LogManagerTest {
                             List.of(0, 1, 2),
                             List.of(0, 1),
                             null,
-                            2L));
+                            2L,
+                            false));
 
             assertEquals(5, logManager.leaderEpoch("controller", 0));
             assertEquals(1, logManager.leaderId("controller", 0));
@@ -385,7 +386,8 @@ class LogManagerTest {
                             List.of(0, 1),
                             List.of(0, 1),
                             1,
-                            null));
+                            null,
+                            false));
 
             assertEquals(2L, logManager.logEndOffset("epoch-coordinator", 0));
             assertEquals(

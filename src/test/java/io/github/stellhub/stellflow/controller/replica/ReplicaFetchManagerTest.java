@@ -1,6 +1,7 @@
 package io.github.stellhub.stellflow.controller.replica;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.stellhub.stellflow.controller.control.ControlPlaneGrpcConfig;
@@ -446,6 +447,156 @@ class ReplicaFetchManagerTest {
                 client.close();
                 server.close();
                 manager.close();
+                socketServer.close();
+                responder.close();
+                dispatcher.close();
+                leaderBrokerApis.close();
+            }
+        }
+    }
+
+    /**
+     * 验证 controller 删除 topic 后，会通过 partition control delete 命令联动清理 broker 本地存储。
+     */
+    @Test
+    void shouldDeleteLocalPartitionDataWhenControllerDeletesTopic() throws Exception {
+        int leaderPort = findFreePort();
+        int controllerPort = findFreePort();
+        int quorumPort = findFreePort();
+        Path leaderLogDir = tempDir.resolve("leader-delete");
+        Path followerLogDir = tempDir.resolve("follower-delete");
+
+        RequestChannel requestChannel = new InMemoryRequestChannel();
+        BrokerApis leaderBrokerApis =
+                BrokerApis.defaultBrokerApis("127.0.0.1", leaderPort, leaderLogDir);
+        RequestDispatcher dispatcher = new RequestDispatcher(requestChannel, leaderBrokerApis, 2);
+        ResponseResponder responder = new ResponseResponder(requestChannel);
+        SocketServer socketServer =
+                new SocketServer(
+                        NettyTransportConfig.builder().host("127.0.0.1").port(leaderPort).build(),
+                        ProtocolCodecRegistry.defaultRegistry(),
+                        requestChannel);
+
+        LogStorageConfig followerConfig =
+                LogStorageConfig.builder()
+                        .rootDir(followerLogDir)
+                        .segmentBytes(1024)
+                        .indexIntervalBytes(1)
+                        .retentionSegments(8)
+                        .retentionMs(7L * 24 * 60 * 60 * 1000)
+                        .retentionBytes(1024 * 1024)
+                        .build();
+        try (LogManager followerLogManager = new LogManager(followerConfig)) {
+            ReplicaFetchManager leaderManager =
+                    new ReplicaFetchManager(
+                            ReplicaFetchConfig.builder().enabled(false).followerBrokerId(0).build(),
+                            leaderBrokerApis.logManager(),
+                            new ReplicaFetchMetrics());
+            ReplicaFetchManager followerManager =
+                    new ReplicaFetchManager(
+                            ReplicaFetchConfig.builder().enabled(false).followerBrokerId(2).build(),
+                            followerLogManager,
+                            new ReplicaFetchMetrics());
+            ControllerBrokerControlServer server =
+                    new ControllerBrokerControlServer(
+                            ControlPlaneGrpcConfig.builder()
+                                    .serverEnabled(true)
+                                    .serverHost("127.0.0.1")
+                                    .serverPort(controllerPort)
+                                    .clusterId("delete-cluster")
+                                    .build(),
+                            new io.github.stellhub.stellflow.controller.control.ControllerAssignmentRegistry(),
+                            new io.github.stellhub.stellflow.controller.control.ControllerPartitionControlRegistry(),
+                            new PartitionControlResultRegistry(),
+                            ControllerQuorumConfig.builder()
+                                    .enabled(true)
+                                    .selfId("c1")
+                                    .groupId("44444444-4444-4444-4444-444444444444")
+                                    .endpoint("grpc://127.0.0.1:" + quorumPort)
+                                    .storageDir(tempDir.resolve("delete-controller-quorum"))
+                                    .peers("c1@grpc://127.0.0.1:" + quorumPort)
+                                    .requestTimeoutMs(3000)
+                                    .build(),
+                            leaderBrokerApis.controllerReplicaCoordinator());
+            ControllerBrokerControlClient leaderClient =
+                    new ControllerBrokerControlClient(
+                            ControlPlaneGrpcConfig.builder()
+                                    .clientEnabled(true)
+                                    .controllerHost("127.0.0.1")
+                                    .controllerPort(controllerPort)
+                                    .brokerId(0)
+                                    .advertisedHost("127.0.0.1")
+                                    .advertisedPort(leaderPort)
+                                    .watchReconnectBackoffMs(200)
+                                    .registrationIntervalMs(200)
+                                    .build(),
+                            leaderManager,
+                            leaderBrokerApis.controllerReplicaCoordinator());
+            ControllerBrokerControlClient followerClient =
+                    new ControllerBrokerControlClient(
+                            ControlPlaneGrpcConfig.builder()
+                                    .clientEnabled(true)
+                                    .controllerHost("127.0.0.1")
+                                    .controllerPort(controllerPort)
+                                    .brokerId(2)
+                                    .advertisedHost("127.0.0.1")
+                                    .advertisedPort(leaderPort + 1)
+                                    .watchReconnectBackoffMs(200)
+                                    .registrationIntervalMs(200)
+                                    .build(),
+                            followerManager,
+                            new ControllerReplicaCoordinator(followerLogManager));
+            try {
+                dispatcher.start();
+                responder.start();
+                socketServer.start();
+                server.start();
+
+                leaderClient.start();
+                followerClient.start();
+
+                ControllerMetadataDecisionService decisionService = server.metadataDecisionService();
+                waitUntil(() -> server.metadataStateMachine().brokers().size() == 2, 5000);
+
+                decisionService.createTopic("delete-topic", 1, 2);
+
+                waitUntil(
+                        () -> leaderBrokerApis.logManager().containsPartition("delete-topic", 0),
+                        5000);
+                waitUntil(() -> followerLogManager.containsPartition("delete-topic", 0), 5000);
+
+                leaderBrokerApis
+                        .logManager()
+                        .append("delete-topic", 0, "payload".getBytes(StandardCharsets.UTF_8));
+
+                decisionService.deleteTopic("delete-topic");
+
+                waitUntil(
+                        () -> !leaderBrokerApis.logManager().containsPartition("delete-topic", 0),
+                        5000);
+                waitUntil(() -> !followerLogManager.containsPartition("delete-topic", 0), 5000);
+                waitUntil(
+                        () -> server.partitionControlResultRegistry().latestReport(0).stream()
+                                        .anyMatch(
+                                                result ->
+                                                        result.getSuccess()
+                                                                && result.getDeletePartition())
+                                && server.partitionControlResultRegistry().latestReport(2).stream()
+                                        .anyMatch(
+                                                result ->
+                                                        result.getSuccess()
+                                                                && result.getDeletePartition()),
+                        5000);
+
+                assertFalse(server.metadataStateMachine().topic("delete-topic").isPresent());
+                assertFalse(leaderBrokerApis.logManager().containsPartition("delete-topic", 0));
+                assertFalse(followerLogManager.containsPartition("delete-topic", 0));
+            } finally {
+                followerClient.close();
+                leaderClient.close();
+                server.close();
+                followerManager.close();
+                leaderManager.close();
                 socketServer.close();
                 responder.close();
                 dispatcher.close();

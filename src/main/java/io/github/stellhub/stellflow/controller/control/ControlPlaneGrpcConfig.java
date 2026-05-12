@@ -27,6 +27,7 @@ public class ControlPlaneGrpcConfig {
     @Builder.Default private final String advertisedHost = "127.0.0.1";
     @Builder.Default private final int advertisedPort = 9092;
     @Builder.Default private final int watchReconnectBackoffMs = 1000;
+    @Builder.Default private final int registrationIntervalMs = 1000;
     @Builder.Default private final String clusterId = "stellflow-dev-cluster";
 
     /**
@@ -76,6 +77,11 @@ public class ControlPlaneGrpcConfig {
                                 properties,
                                 "watchReconnectBackoffMs",
                                 defaults.getWatchReconnectBackoffMs()))
+                .registrationIntervalMs(
+                        readPositiveInt(
+                                properties,
+                                "registrationIntervalMs",
+                                defaults.getRegistrationIntervalMs()))
                 .clusterId(readString(properties, "clusterId", defaults.getClusterId()))
                 .build();
     }

@@ -9,4 +9,5 @@ public record PartitionControlApplyReport(
         int leaderEpoch,
         boolean success,
         String message,
-        long appliedAtMs) {}
+        long appliedAtMs,
+        boolean deletePartition) {}

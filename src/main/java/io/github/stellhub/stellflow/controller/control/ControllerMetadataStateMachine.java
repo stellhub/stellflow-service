@@ -24,6 +24,8 @@ public class ControllerMetadataStateMachine {
     private final Map<Integer, BrokerRegistrationMetadata> brokers = new ConcurrentHashMap<>();
     private final Map<String, ControllerTopicMetadata> topics = new ConcurrentHashMap<>();
     private final Map<String, ControllerPartitionMetadata> partitions = new ConcurrentHashMap<>();
+    private final Map<Integer, Map<String, PartitionControlCommandMessage>> pendingDeleteCommandsByBroker =
+            new ConcurrentHashMap<>();
 
     public ControllerMetadataStateMachine(
             ControllerAssignmentRegistry assignmentRegistry,
@@ -92,6 +94,8 @@ public class ControllerMetadataStateMachine {
      * 删除单个分区元数据。
      */
     public synchronized void removePartition(String topic, int partition) {
+        ControllerPartitionMetadata current = partitions.get(key(topic, partition));
+        queueDeleteCommandsForPartition(current);
         partitions.remove(key(topic, partition));
         recomputeSnapshots();
     }
@@ -109,6 +113,11 @@ public class ControllerMetadataStateMachine {
      */
     public synchronized void deleteTopic(String topic) {
         topics.remove(topic);
+        for (ControllerPartitionMetadata metadata : partitions.values()) {
+            if (metadata.topic().equals(topic)) {
+                queueDeleteCommandsForPartition(metadata);
+            }
+        }
         partitions.entrySet().removeIf(entry -> entry.getValue().topic().equals(topic));
         recomputeSnapshots();
     }
@@ -154,6 +163,17 @@ public class ControllerMetadataStateMachine {
                                 isrNodes,
                                 current == null ? null : current.truncateToLeaderEpoch(),
                                 current == null ? null : current.truncateToOffset()));
+        if (current != null) {
+            for (Integer brokerId : current.replicaNodes()) {
+                if (!merged.replicaNodes().contains(brokerId)) {
+                    queueDeleteCommand(
+                            brokerId,
+                            topic,
+                            partition,
+                            Math.max(current.leaderEpoch(), merged.leaderEpoch()));
+                }
+            }
+        }
         partitions.put(key(topic, partition), merged);
         recomputeSnapshots();
     }
@@ -282,6 +302,19 @@ public class ControllerMetadataStateMachine {
     public synchronized void recordPartitionControlResults(
             int brokerId, List<PartitionControlApplyResult> results) {
         partitionControlResultRegistry.record(brokerId, results);
+        Map<String, PartitionControlCommandMessage> pendingDeletes =
+                pendingDeleteCommandsByBroker.get(brokerId);
+        if (pendingDeletes != null) {
+            for (PartitionControlApplyResult result : results) {
+                if (result.getSuccess() && result.getDeletePartition()) {
+                    pendingDeletes.remove(key(result.getTopic(), result.getPartition()));
+                }
+            }
+            if (pendingDeletes.isEmpty()) {
+                pendingDeleteCommandsByBroker.remove(brokerId);
+            }
+        }
+        recomputeSnapshots();
     }
 
     /**
@@ -404,6 +437,14 @@ public class ControllerMetadataStateMachine {
             }
         }
 
+        for (Map.Entry<Integer, Map<String, PartitionControlCommandMessage>> entry :
+                pendingDeleteCommandsByBroker.entrySet()) {
+            allBrokerIds.add(entry.getKey());
+            commandsByBroker
+                    .computeIfAbsent(entry.getKey(), ignored -> new ArrayList<>())
+                    .addAll(entry.getValue().values());
+        }
+
         for (Integer brokerId : allBrokerIds) {
             assignmentRegistry.replaceAssignments(
                     brokerId, List.copyOf(assignmentsByBroker.getOrDefault(brokerId, List.of())));
@@ -414,6 +455,24 @@ public class ControllerMetadataStateMachine {
 
     private String key(String topic, int partition) {
         return topic + ":" + partition;
+    }
+
+    private void queueDeleteCommandsForPartition(ControllerPartitionMetadata metadata) {
+        if (metadata == null) {
+            return;
+        }
+        for (Integer brokerId : metadata.replicaNodes()) {
+            queueDeleteCommand(brokerId, metadata.topic(), metadata.partition(), metadata.leaderEpoch());
+        }
+    }
+
+    private void queueDeleteCommand(int brokerId, String topic, int partition, int leaderEpoch) {
+        pendingDeleteCommandsByBroker
+                .computeIfAbsent(brokerId, ignored -> new ConcurrentHashMap<>())
+                .put(
+                        key(topic, partition),
+                        ControllerPartitionControlRegistry.deletePartitionCommand(
+                                topic, partition, leaderEpoch));
     }
 
     /**

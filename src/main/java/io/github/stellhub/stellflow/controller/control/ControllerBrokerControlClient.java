@@ -70,14 +70,36 @@ public class ControllerBrokerControlClient implements AutoCloseable {
         if (!config.isClientEnabled()) {
             return;
         }
+        registerBroker();
+        retryExecutor.scheduleWithFixedDelay(
+                this::safeRegisterBroker,
+                config.getRegistrationIntervalMs(),
+                config.getRegistrationIntervalMs(),
+                TimeUnit.MILLISECONDS);
+        subscribeAssignments();
+        subscribePartitionControlCommands();
+    }
+
+    private void safeRegisterBroker() {
+        if (closed) {
+            return;
+        }
+        try {
+            registerBroker();
+        } catch (RuntimeException exception) {
+            if (!closed) {
+                log.warn("Failed to refresh broker registration heartbeat", exception);
+            }
+        }
+    }
+
+    private void registerBroker() {
         blockingStub.registerBroker(
                 BrokerRegistrationRequest.newBuilder()
                         .setBrokerId(config.getBrokerId())
                         .setAdvertisedHost(config.getAdvertisedHost())
                         .setAdvertisedPort(config.getAdvertisedPort())
                         .build());
-        subscribeAssignments();
-        subscribePartitionControlCommands();
     }
 
     private void subscribeAssignments() {
@@ -186,7 +208,8 @@ public class ControllerBrokerControlClient implements AutoCloseable {
                 command.getReplicaNodesList(),
                 command.getIsrNodesList(),
                 command.getHasTruncateToLeaderEpoch() ? command.getTruncateToLeaderEpoch() : null,
-                command.getHasTruncateToOffset() ? command.getTruncateToOffset() : null);
+                command.getHasTruncateToOffset() ? command.getTruncateToOffset() : null,
+                command.getDeletePartition());
     }
 
     private static PartitionControlApplyResult toReport(PartitionControlApplyReport report) {
@@ -197,6 +220,7 @@ public class ControllerBrokerControlClient implements AutoCloseable {
                 .setSuccess(report.success())
                 .setMessage(report.message() == null ? "" : report.message())
                 .setAppliedAtMs(report.appliedAtMs())
+                .setDeletePartition(report.deletePartition())
                 .build();
     }
 

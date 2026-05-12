@@ -109,6 +109,11 @@ message PartitionControlCommandMessage {
 
   // 如果 has_truncate_to_offset=true，表示 broker 需要把本地日志强制截断到该 offset。
   int64 truncate_to_offset = 10;
+
+  // 是否要求 broker 删除本地该分区的数据目录。
+  // 该字段用于 topic 删除、分区从当前 broker 移除、副本拓扑收缩等场景下的存储清理联动。
+  // 当该值为 true 时，broker 必须优先执行本地删除，而不是继续按普通 leader/follower 命令处理。
+  bool delete_partition = 11;
 }
 
 // controller 侧主动批量调用 broker 本地状态机时的命令集合。
@@ -164,6 +169,10 @@ message PartitionControlApplyResult {
   // broker 本地完成应用的毫秒时间戳。
   // 便于 controller 做时序审计与排障。
   int64 applied_at_ms = 6;
+
+  // 本次结果是否对应分区删除命令。
+  // controller 需要依赖该字段清除待确认的删除 tombstone。
+  bool delete_partition = 7;
 }
 
 // broker 一次批量结果上报请求。

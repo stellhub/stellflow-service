@@ -13,4 +13,5 @@ public record PartitionControlCommand(
         List<Integer> replicaNodes,
         List<Integer> isrNodes,
         Integer truncateToLeaderEpoch,
-        Long truncateToOffset) {}
+        Long truncateToOffset,
+        boolean deletePartition) {}

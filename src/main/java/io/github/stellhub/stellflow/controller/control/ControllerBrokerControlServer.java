@@ -21,6 +21,7 @@ public class ControllerBrokerControlServer implements AutoCloseable {
     private final ControllerMetadataStateMachine metadataStateMachine;
     private final ControllerMetadataCommandService metadataCommandService;
     private final ControllerMetadataDecisionService metadataDecisionService;
+    private final ControllerMetadataAutoReconciler metadataAutoReconciler;
     private final ControllerQuorumManager quorumManager;
     private final ControllerReplicaCoordinator replicaCoordinator;
     private Server server;
@@ -65,6 +66,12 @@ public class ControllerBrokerControlServer implements AutoCloseable {
         this.metadataDecisionService =
                 new ControllerMetadataDecisionService(
                         metadataCommandService, metadataStateMachine);
+        this.metadataAutoReconciler =
+                new ControllerMetadataAutoReconciler(
+                        ControllerAutoReconcileConfig.load(),
+                        metadataStateMachine,
+                        metadataDecisionService,
+                        replicaCoordinator);
         this.replicaCoordinator = replicaCoordinator;
     }
 
@@ -94,6 +101,7 @@ public class ControllerBrokerControlServer implements AutoCloseable {
                                             config.getClusterId()))
                             .build()
                             .start();
+            metadataAutoReconciler.start();
             log.info(
                     "Controller/Broker gRPC server started on {}:{}",
                     config.getServerHost(),
@@ -130,6 +138,7 @@ public class ControllerBrokerControlServer implements AutoCloseable {
     @Override
     public synchronized void close() {
         if (server == null) {
+            metadataAutoReconciler.close();
             if (quorumManager != null) {
                 quorumManager.close();
             }
@@ -137,6 +146,7 @@ public class ControllerBrokerControlServer implements AutoCloseable {
         }
         server.shutdownNow();
         server = null;
+        metadataAutoReconciler.close();
         if (quorumManager != null) {
             quorumManager.close();
         }

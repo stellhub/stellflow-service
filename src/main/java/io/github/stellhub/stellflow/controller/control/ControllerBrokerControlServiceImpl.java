@@ -193,6 +193,7 @@ public class ControllerBrokerControlServiceImpl
                 new ArrayList<>(command.getReplicaNodesList()),
                 new ArrayList<>(command.getIsrNodesList()),
                 command.getHasTruncateToLeaderEpoch() ? command.getTruncateToLeaderEpoch() : null,
-                command.getHasTruncateToOffset() ? command.getTruncateToOffset() : null);
+                command.getHasTruncateToOffset() ? command.getTruncateToOffset() : null,
+                command.getDeletePartition());
     }
 }

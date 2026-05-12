@@ -118,8 +118,30 @@ stellflow:
       # Reconnect backoff when the assignment watch stream breaks.
       watchReconnectBackoffMs: 1000
 
+      # Periodic broker registration heartbeat interval in milliseconds.
+      # The broker re-sends its registration to keep controller-side liveness fresh.
+      # This value should be smaller than brokerHeartbeatTimeoutMs below.
+      registrationIntervalMs: 1000
+
       # Cluster id returned by the controller-side gRPC service.
       clusterId: stellflow-dev-cluster
+
+    reconcile:
+      # Whether the controller should run automatic broker/ISR reconciliation in background.
+      enabled: true
+
+      # Fixed-delay interval for one reconciliation round.
+      intervalMs: 1000
+
+      # Broker liveness timeout in milliseconds.
+      # If no fresh broker registration heartbeat is seen within this window,
+      # the controller will automatically fence that broker.
+      brokerHeartbeatTimeoutMs: 5000
+
+      # Maximum tolerated replica lag, measured in logical message count difference.
+      # When follower lag exceeds this threshold, controller auto-shrinks ISR;
+      # when lag falls back within the threshold, controller auto-expands ISR.
+      maxReplicaLagMessages: 0
 
   controller:
     quorum:

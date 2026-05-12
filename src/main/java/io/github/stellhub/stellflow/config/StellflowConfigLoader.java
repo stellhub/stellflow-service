@@ -68,6 +68,18 @@ public final class StellflowConfigLoader {
     }
 
     /**
+     * 读取非负 long 配置。
+     */
+    public static long readNonNegativeLong(Properties properties, String key, long defaultValue) {
+        String rawValue = readString(properties, key, Long.toString(defaultValue));
+        long value = Long.parseLong(rawValue);
+        if (value < 0) {
+            throw new IllegalArgumentException(key + " must be non-negative, but was " + value);
+        }
+        return value;
+    }
+
+    /**
      * 读取布尔配置。
      */
     public static boolean readBoolean(Properties properties, String key, boolean defaultValue) {

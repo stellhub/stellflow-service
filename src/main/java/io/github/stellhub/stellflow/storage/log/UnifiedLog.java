@@ -420,6 +420,20 @@ public class UnifiedLog implements AutoCloseable {
     }
 
     /**
+     * 返回指定副本最近一次上报的复制进度。
+     */
+    public synchronized long replicaEndOffset(int brokerId) {
+        return replicaEndOffsets.getOrDefault(brokerId, logStartOffset);
+    }
+
+    /**
+     * 返回全部副本复制进度快照。
+     */
+    public synchronized Map<Integer, Long> replicaEndOffsets() {
+        return Map.copyOf(replicaEndOffsets);
+    }
+
+    /**
      * 当前 log end offset。
      */
     public synchronized long logEndOffset() {
@@ -613,6 +627,37 @@ public class UnifiedLog implements AutoCloseable {
                 if (firstException == null) {
                     firstException = exception;
                 }
+            }
+        }
+        if (firstException != null) {
+            throw firstException;
+        }
+    }
+
+    /**
+     * 删除当前分区的全部本地日志文件与目录。
+     */
+    public synchronized void deleteAllData() {
+        RuntimeException firstException = null;
+        for (LogSegment segment : new ArrayList<>(segments)) {
+            try {
+                segment.deleteFiles();
+            } catch (RuntimeException exception) {
+                if (firstException == null) {
+                    firstException = exception;
+                }
+            }
+        }
+        segments.clear();
+        try {
+            Files.deleteIfExists(partitionDir.resolve(CHECKPOINT_FILE_NAME));
+            Files.deleteIfExists(partitionDir.resolve(LEADER_EPOCH_CHECKPOINT_FILE_NAME));
+            Files.deleteIfExists(partitionDir);
+        } catch (IOException exception) {
+            if (firstException == null) {
+                firstException =
+                        new IllegalStateException(
+                                "Failed to delete unified log directory " + partitionDir, exception);
             }
         }
         if (firstException != null) {

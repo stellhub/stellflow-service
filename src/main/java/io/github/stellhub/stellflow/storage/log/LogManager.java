@@ -256,6 +256,45 @@ public class LogManager implements AutoCloseable {
     }
 
     /**
+     * 返回指定副本最近一次复制进度。
+     */
+    public long replicaEndOffset(String topic, int partition, int brokerId) {
+        UnifiedLog log = logs.get(new TopicPartition(topic, partition));
+        if (log == null) {
+            return 0;
+        }
+        return log.replicaEndOffset(brokerId);
+    }
+
+    /**
+     * 删除单个分区的本地存储。
+     */
+    public void deletePartition(String topic, int partition) {
+        TopicPartition topicPartition = new TopicPartition(topic, partition);
+        UnifiedLog log = logs.remove(topicPartition);
+        if (log != null) {
+            log.deleteAllData();
+        }
+    }
+
+    /**
+     * 删除整个 topic 的本地存储。
+     */
+    public void deleteTopic(String topic) {
+        List<Integer> partitions = partitions(topic);
+        for (Integer partition : partitions) {
+            deletePartition(topic, partition);
+        }
+    }
+
+    /**
+     * 判断指定分区是否存在本地日志。
+     */
+    public boolean containsPartition(String topic, int partition) {
+        return logs.containsKey(new TopicPartition(topic, partition));
+    }
+
+    /**
      * 获取或创建日志。
      */
     private UnifiedLog getOrCreateLog(TopicPartition topicPartition) {

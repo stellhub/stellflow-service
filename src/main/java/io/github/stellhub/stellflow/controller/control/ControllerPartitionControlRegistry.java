@@ -86,6 +86,20 @@ public class ControllerPartitionControlRegistry {
     }
 
     /**
+     * 构建本地删除命令。
+     */
+    public static PartitionControlCommandMessage deletePartitionCommand(
+            String topic, int partition, int leaderEpoch) {
+        return PartitionControlCommandMessage.newBuilder()
+                .setTopic(topic)
+                .setPartition(partition)
+                .setLeaderId(-1)
+                .setLeaderEpoch(leaderEpoch)
+                .setDeletePartition(true)
+                .build();
+    }
+
+    /**
      * 简化命令回调接口。
      */
     @FunctionalInterface
