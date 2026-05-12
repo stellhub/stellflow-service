@@ -11,6 +11,8 @@ import io.github.stellhub.stellflow.network.protocol.ListOffsetsTopicRequest;
 import io.github.stellhub.stellflow.network.protocol.ListOffsetsTopicResponse;
 import io.github.stellhub.stellflow.network.protocol.OpaqueRequestBody;
 import io.github.stellhub.stellflow.network.protocol.ResponseHeader;
+import io.github.stellhub.stellflow.server.runtime.PartitionOffsetResult;
+import io.github.stellhub.stellflow.server.runtime.ReplicaManager;
 import io.github.stellhub.stellflow.storage.log.LogManager;
 import io.github.stellhub.stellflow.storage.log.TimestampOffsetResult;
 import java.util.ArrayList;
@@ -25,9 +27,16 @@ public class ListOffsetsHandler implements ApiHandler {
     private static final long EARLIEST_TIMESTAMP = -2L;
 
     private final LogManager logManager;
+    private final ReplicaManager replicaManager;
 
     public ListOffsetsHandler(LogManager logManager) {
         this.logManager = logManager;
+        this.replicaManager = null;
+    }
+
+    public ListOffsetsHandler(ReplicaManager replicaManager) {
+        this.logManager = null;
+        this.replicaManager = replicaManager;
     }
 
     @Override
@@ -73,6 +82,24 @@ public class ListOffsetsHandler implements ApiHandler {
         for (ListOffsetsTopicRequest topic : requestBody.topics()) {
             List<ListOffsetsPartitionResponse> partitionResponses = new ArrayList<>();
             for (ListOffsetsPartitionRequest partition : topic.partitions()) {
+                if (replicaManager != null) {
+                    PartitionOffsetResult result =
+                            replicaManager.listOffsets(
+                                    topic.topic(),
+                                    partition.partition(),
+                                    partition.timestamp(),
+                                    partition.currentLeaderEpoch(),
+                                    partition.maxNumOffsets());
+                    partitionResponses.add(
+                            new ListOffsetsPartitionResponse(
+                                    partition.partition(),
+                                    result.errorCode(),
+                                    result.leaderEpoch(),
+                                    result.timestamp(),
+                                    result.offset(),
+                                    result.offsets()));
+                    continue;
+                }
                 if (!logManager.containsTopic(topic.topic())
                         || !logManager.partitions(topic.topic()).contains(partition.partition())) {
                     partitionResponses.add(

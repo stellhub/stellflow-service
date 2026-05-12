@@ -70,11 +70,45 @@ public class ProtocolCodecRegistry {
         registry.registerRequestCodec(new ProduceRequestBodyCodec());
         registry.registerRequestCodec(new FetchRequestBodyCodec());
         registry.registerRequestCodec(new ListOffsetsRequestBodyCodec());
+        registry.registerRequestCodec(new FindCoordinatorRequestBodyCodec());
+        registry.registerRequestCodec(new OffsetCommitRequestBodyCodec());
+        registry.registerRequestCodec(new OffsetFetchRequestBodyCodec());
+        registry.registerRequestCodec(new GroupRequestBodyCodec(ApiKey.HEARTBEAT));
+        registry.registerRequestCodec(new JoinGroupRequestBodyCodec());
+        registry.registerRequestCodec(new GroupRequestBodyCodec(ApiKey.SYNC_GROUP));
+        registry.registerRequestCodec(new TopicAdminRequestBodyCodec(ApiKey.CREATE_TOPIC));
+        registry.registerRequestCodec(new TopicAdminRequestBodyCodec(ApiKey.DELETE_TOPIC));
+        registry.registerRequestCodec(new TopicAdminRequestBodyCodec(ApiKey.ALTER_PARTITION));
+        registry.registerRequestCodec(new ApiVersionsRequestBodyCodec() {
+            @Override
+            public ApiKey apiKey() {
+                return ApiKey.DESCRIBE_CLUSTER;
+            }
+        });
+        registry.registerRequestCodec(new ApiVersionsRequestBodyCodec() {
+            @Override
+            public ApiKey apiKey() {
+                return ApiKey.HEALTH_CHECK;
+            }
+        });
+        registry.registerRequestCodec(new BrokerAdminRequestBodyCodec());
         registry.registerResponseCodec(new ApiVersionsResponseBodyCodec());
         registry.registerResponseCodec(new MetadataResponseBodyCodec());
         registry.registerResponseCodec(new ProduceResponseBodyCodec());
         registry.registerResponseCodec(new FetchResponseBodyCodec());
         registry.registerResponseCodec(new ListOffsetsResponseBodyCodec());
+        registry.registerResponseCodec(new FindCoordinatorResponseBodyCodec());
+        registry.registerResponseCodec(new OffsetCommitResponseBodyCodec());
+        registry.registerResponseCodec(new OffsetFetchResponseBodyCodec());
+        registry.registerResponseCodec(new GroupResponseBodyCodec(ApiKey.HEARTBEAT));
+        registry.registerResponseCodec(new JoinGroupResponseBodyCodec());
+        registry.registerResponseCodec(new GroupResponseBodyCodec(ApiKey.SYNC_GROUP));
+        registry.registerResponseCodec(new TopicAdminResponseBodyCodec(ApiKey.CREATE_TOPIC));
+        registry.registerResponseCodec(new TopicAdminResponseBodyCodec(ApiKey.DELETE_TOPIC));
+        registry.registerResponseCodec(new TopicAdminResponseBodyCodec(ApiKey.ALTER_PARTITION));
+        registry.registerResponseCodec(new ClusterStatusResponseBodyCodec(ApiKey.DESCRIBE_CLUSTER));
+        registry.registerResponseCodec(new ClusterStatusResponseBodyCodec(ApiKey.HEALTH_CHECK));
+        registry.registerResponseCodec(new BrokerAdminResponseBodyCodec());
         return registry;
     }
 

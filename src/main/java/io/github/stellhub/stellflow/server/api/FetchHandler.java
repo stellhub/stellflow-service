@@ -13,6 +13,8 @@ import io.github.stellhub.stellflow.network.protocol.FetchTopicResponse;
 import io.github.stellhub.stellflow.network.protocol.OpaqueRequestBody;
 import io.github.stellhub.stellflow.network.protocol.ResponseHeader;
 import io.github.stellhub.stellflow.controller.replica.ReplicaPayloadCodec;
+import io.github.stellhub.stellflow.server.runtime.PartitionReadResult;
+import io.github.stellhub.stellflow.server.runtime.ReplicaManager;
 import io.github.stellhub.stellflow.storage.log.LogManager;
 import io.github.stellhub.stellflow.storage.log.LogReadResult;
 import io.github.stellhub.stellflow.storage.log.ReplicaLogReadResult;
@@ -25,9 +27,16 @@ import java.util.List;
 public class FetchHandler implements ApiHandler {
 
     private final LogManager logManager;
+    private final ReplicaManager replicaManager;
 
     public FetchHandler(LogManager logManager) {
         this.logManager = logManager;
+        this.replicaManager = null;
+    }
+
+    public FetchHandler(ReplicaManager replicaManager) {
+        this.logManager = null;
+        this.replicaManager = replicaManager;
     }
 
     @Override
@@ -100,6 +109,22 @@ public class FetchHandler implements ApiHandler {
      */
     private FetchPartitionResponse handleConsumerFetch(
             FetchTopicRequest topicRequest, FetchPartitionRequest partitionRequest) {
+        if (replicaManager != null) {
+            PartitionReadResult fetchResult =
+                    replicaManager.readConsumer(
+                            topicRequest.topic(),
+                            partitionRequest.partition(),
+                            partitionRequest.fetchOffset(),
+                            partitionRequest.partitionMaxBytes());
+            return new FetchPartitionResponse(
+                    partitionRequest.partition(),
+                    fetchResult.errorCode(),
+                    fetchResult.highWatermark(),
+                    fetchResult.logStartOffset(),
+                    fetchResult.lastStableOffset(),
+                    List.<AbortedTransaction>of(),
+                    fetchResult.records());
+        }
         LogReadResult fetchResult =
                 logManager.read(
                         topicRequest.topic(),
@@ -133,6 +158,23 @@ public class FetchHandler implements ApiHandler {
             FetchRequestBody fetchRequestBody,
             FetchTopicRequest topicRequest,
             FetchPartitionRequest partitionRequest) {
+        if (replicaManager != null) {
+            PartitionReadResult fetchResult =
+                    replicaManager.readReplica(
+                            topicRequest.topic(),
+                            partitionRequest.partition(),
+                            fetchRequestBody.replicaId(),
+                            partitionRequest.fetchOffset(),
+                            partitionRequest.partitionMaxBytes());
+            return new FetchPartitionResponse(
+                    partitionRequest.partition(),
+                    fetchResult.errorCode(),
+                    fetchResult.highWatermark(),
+                    fetchResult.logStartOffset(),
+                    fetchResult.lastStableOffset(),
+                    List.of(),
+                    ReplicaPayloadCodec.encode(fetchResult.replicaEntries()));
+        }
         ReplicaLogReadResult fetchResult =
                 logManager.readReplica(
                         topicRequest.topic(),

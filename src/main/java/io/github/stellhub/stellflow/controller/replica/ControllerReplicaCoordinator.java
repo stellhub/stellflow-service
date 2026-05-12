@@ -1,5 +1,6 @@
 package io.github.stellhub.stellflow.controller.replica;
 
+import io.github.stellhub.stellflow.server.runtime.ReplicaManager;
 import io.github.stellhub.stellflow.storage.log.LogManager;
 import java.util.List;
 import java.util.Optional;
@@ -10,15 +11,25 @@ import java.util.Optional;
 public class ControllerReplicaCoordinator {
 
     private final LogManager logManager;
+    private final ReplicaManager replicaManager;
 
     public ControllerReplicaCoordinator(LogManager logManager) {
         this.logManager = logManager;
+        this.replicaManager = null;
+    }
+
+    public ControllerReplicaCoordinator(ReplicaManager replicaManager) {
+        this.logManager = replicaManager.logManager();
+        this.replicaManager = replicaManager;
     }
 
     /**
      * 应用分区控制命令。
      */
     public PartitionControlApplyReport apply(PartitionControlCommand command) {
+        if (replicaManager != null) {
+            return replicaManager.applyPartitionControl(command);
+        }
         long appliedAtMs = System.currentTimeMillis();
         try {
             if (command.deletePartition()) {

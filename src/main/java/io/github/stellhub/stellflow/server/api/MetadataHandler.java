@@ -1,5 +1,8 @@
 package io.github.stellhub.stellflow.server.api;
 
+import io.github.stellhub.stellflow.metadata.BrokerEndpoint;
+import io.github.stellhub.stellflow.metadata.MetadataCache;
+import io.github.stellhub.stellflow.metadata.PartitionMetadata;
 import io.github.stellhub.stellflow.network.protocol.ApiKey;
 import io.github.stellhub.stellflow.network.protocol.EmptyResponseBody;
 import io.github.stellhub.stellflow.network.protocol.ErrorCode;
@@ -21,11 +24,20 @@ import java.util.List;
 public class MetadataHandler implements ApiHandler {
 
     private final LogManager logManager;
+    private final MetadataCache metadataCache;
     private final String brokerHost;
     private final int brokerPort;
 
     public MetadataHandler(LogManager logManager, String brokerHost, int brokerPort) {
         this.logManager = logManager;
+        this.metadataCache = null;
+        this.brokerHost = brokerHost;
+        this.brokerPort = brokerPort;
+    }
+
+    public MetadataHandler(MetadataCache metadataCache, String brokerHost, int brokerPort) {
+        this.logManager = null;
+        this.metadataCache = metadataCache;
         this.brokerHost = brokerHost;
         this.brokerPort = brokerPort;
     }
@@ -78,7 +90,7 @@ public class MetadataHandler implements ApiHandler {
 
         List<MetadataTopicResponse> topics = new ArrayList<>();
         for (MetadataTopicRequest topicRequest : metadataRequestBody.topics()) {
-            if (!logManager.containsTopic(topicRequest.topic())) {
+            if (!containsTopic(topicRequest.topic())) {
                 topics.add(
                         new MetadataTopicResponse(
                                 ErrorCode.UNKNOWN_TOPIC_OR_PARTITION,
@@ -92,19 +104,14 @@ public class MetadataHandler implements ApiHandler {
         }
 
         MetadataResponseBody responseBody =
-                new MetadataResponseBody(
-                        "stellflow-dev-cluster",
-                        0,
-                        List.of(new MetadataBroker(0, brokerHost, brokerPort, null)),
-                        topics,
-                        0);
+                new MetadataResponseBody("stellflow-dev-cluster", 0, brokers(), topics, 0);
 
         if (metadataRequestBody.topics().isEmpty()) {
             responseBody =
                     new MetadataResponseBody(
                             "stellflow-dev-cluster",
                             0,
-                            List.of(new MetadataBroker(0, brokerHost, brokerPort, null)),
+                            brokers(),
                             buildAllTopicMetadata(),
                             0);
         }
@@ -125,6 +132,15 @@ public class MetadataHandler implements ApiHandler {
      */
     private List<MetadataTopicResponse> buildAllTopicMetadata() {
         List<MetadataTopicResponse> topicResponses = new ArrayList<>();
+        if (metadataCache != null) {
+            for (String topic : metadataCache.topicNames()) {
+                topicResponses.add(buildTopicMetadata(topic, false));
+            }
+            if (topicResponses.isEmpty()) {
+                topicResponses.add(buildPlaceholderTopic());
+            }
+            return topicResponses;
+        }
         for (String topic : logManager.topicNames()) {
             topicResponses.add(buildTopicMetadata(topic, false));
         }
@@ -139,6 +155,20 @@ public class MetadataHandler implements ApiHandler {
      */
     private MetadataTopicResponse buildTopicMetadata(String topic, boolean internal) {
         List<MetadataPartitionResponse> partitions = new ArrayList<>();
+        if (metadataCache != null) {
+            for (PartitionMetadata partition : metadataCache.topicPartitions(topic)) {
+                partitions.add(
+                        new MetadataPartitionResponse(
+                                ErrorCode.NONE,
+                                partition.partition(),
+                                partition.leaderId(),
+                                partition.leaderEpoch(),
+                                partition.replicaNodes(),
+                                partition.isrNodes(),
+                                List.of()));
+            }
+            return new MetadataTopicResponse(ErrorCode.NONE, topic, internal, partitions, 0);
+        }
         for (Integer partition : logManager.partitions(topic)) {
             partitions.add(
                     new MetadataPartitionResponse(
@@ -171,5 +201,23 @@ public class MetadataHandler implements ApiHandler {
                                 List.of(0),
                                 List.of())),
                 0);
+    }
+
+    private boolean containsTopic(String topic) {
+        if (metadataCache != null) {
+            return metadataCache.containsTopic(topic);
+        }
+        return logManager.containsTopic(topic);
+    }
+
+    private List<MetadataBroker> brokers() {
+        if (metadataCache == null || metadataCache.brokers().isEmpty()) {
+            return List.of(new MetadataBroker(0, brokerHost, brokerPort, null));
+        }
+        List<MetadataBroker> values = new ArrayList<>();
+        for (BrokerEndpoint broker : metadataCache.brokers()) {
+            values.add(new MetadataBroker(broker.brokerId(), broker.host(), broker.port(), broker.rack()));
+        }
+        return values;
     }
 }

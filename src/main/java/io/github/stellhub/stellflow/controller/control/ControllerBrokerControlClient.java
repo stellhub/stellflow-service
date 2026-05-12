@@ -15,6 +15,7 @@ import io.github.stellhub.stellflow.controller.replica.PartitionControlApplyRepo
 import io.github.stellhub.stellflow.controller.replica.PartitionControlCommand;
 import io.github.stellhub.stellflow.controller.replica.ReplicaFetchAssignment;
 import io.github.stellhub.stellflow.controller.replica.ReplicaFetchManager;
+import io.github.stellhub.stellflow.metadata.MetadataCache;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.stub.StreamObserver;
@@ -34,6 +35,7 @@ public class ControllerBrokerControlClient implements AutoCloseable {
     private final ControlPlaneGrpcConfig config;
     private final ReplicaFetchManager replicaFetchManager;
     private final ControllerReplicaCoordinator replicaCoordinator;
+    private final MetadataCache metadataCache;
     private final ManagedChannel channel;
     private final ControllerBrokerControlServiceGrpc.ControllerBrokerControlServiceStub asyncStub;
     private final ControllerBrokerControlServiceGrpc.ControllerBrokerControlServiceBlockingStub
@@ -52,9 +54,18 @@ public class ControllerBrokerControlClient implements AutoCloseable {
             ControlPlaneGrpcConfig config,
             ReplicaFetchManager replicaFetchManager,
             ControllerReplicaCoordinator replicaCoordinator) {
+        this(config, replicaFetchManager, replicaCoordinator, null);
+    }
+
+    public ControllerBrokerControlClient(
+            ControlPlaneGrpcConfig config,
+            ReplicaFetchManager replicaFetchManager,
+            ControllerReplicaCoordinator replicaCoordinator,
+            MetadataCache metadataCache) {
         this.config = config;
         this.replicaFetchManager = replicaFetchManager;
         this.replicaCoordinator = replicaCoordinator;
+        this.metadataCache = metadataCache;
         this.channel =
                 ManagedChannelBuilder.forAddress(config.getControllerHost(), config.getControllerPort())
                         .usePlaintext()
@@ -115,6 +126,9 @@ public class ControllerBrokerControlClient implements AutoCloseable {
                                 value.getAssignmentsList().stream()
                                         .map(ControllerBrokerControlClient::toAssignment)
                                         .collect(Collectors.toList());
+                        if (metadataCache != null) {
+                            metadataCache.applyReplicaAssignments(value.getAssignmentsList());
+                        }
                         replicaFetchManager.replaceAssignments(assignments);
                     }
 
@@ -161,6 +175,9 @@ public class ControllerBrokerControlClient implements AutoCloseable {
                 new StreamObserver<>() {
                     @Override
                     public void onNext(PartitionControlCommandEvent value) {
+                        if (metadataCache != null) {
+                            metadataCache.applyPartitionControlSnapshot(value.getCommandsList());
+                        }
                         List<PartitionControlApplyResult> reports =
                                 value.getCommandsList().stream()
                                         .map(ControllerBrokerControlClient::toCommand)

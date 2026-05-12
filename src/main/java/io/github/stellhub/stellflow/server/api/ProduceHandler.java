@@ -11,8 +11,11 @@ import io.github.stellhub.stellflow.network.protocol.ProduceResponseBody;
 import io.github.stellhub.stellflow.network.protocol.ProduceTopicData;
 import io.github.stellhub.stellflow.network.protocol.ProduceTopicResponse;
 import io.github.stellhub.stellflow.network.protocol.ResponseHeader;
+import io.github.stellhub.stellflow.producer.ProducerStateManager;
 import io.github.stellhub.stellflow.storage.log.LogAppendResult;
 import io.github.stellhub.stellflow.storage.log.LogManager;
+import io.github.stellhub.stellflow.server.runtime.PartitionAppendResult;
+import io.github.stellhub.stellflow.server.runtime.ReplicaManager;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -22,9 +25,23 @@ import java.util.List;
 public class ProduceHandler implements ApiHandler {
 
     private final LogManager logManager;
+    private final ReplicaManager replicaManager;
+    private final ProducerStateManager producerStateManager;
 
     public ProduceHandler(LogManager logManager) {
         this.logManager = logManager;
+        this.replicaManager = null;
+        this.producerStateManager = new ProducerStateManager();
+    }
+
+    public ProduceHandler(ReplicaManager replicaManager) {
+        this(replicaManager, new ProducerStateManager());
+    }
+
+    public ProduceHandler(ReplicaManager replicaManager, ProducerStateManager producerStateManager) {
+        this.logManager = null;
+        this.replicaManager = replicaManager;
+        this.producerStateManager = producerStateManager;
     }
 
     @Override
@@ -68,6 +85,7 @@ public class ProduceHandler implements ApiHandler {
         }
 
         List<ProduceTopicResponse> topicResponses = new ArrayList<>();
+        producerStateManager.getOrCreate(producerKey(requestContext, produceRequestBody));
         for (ProduceTopicData topicData : produceRequestBody.topicData()) {
             List<ProducePartitionResponse> partitionResponses = new ArrayList<>();
             for (ProducePartitionData partitionData : topicData.partitions()) {
@@ -82,16 +100,26 @@ public class ProduceHandler implements ApiHandler {
                                     0));
                     continue;
                 }
-                LogAppendResult appendResult =
-                        logManager.append(topicData.topic(), partitionData.partition(), partitionData.records());
+                if (produceRequestBody.acks() < -1 || produceRequestBody.acks() > 1) {
+                    partitionResponses.add(
+                            new ProducePartitionResponse(
+                                    partitionData.partition(),
+                                    ErrorCode.INVALID_REQUEST,
+                                    -1,
+                                    0,
+                                    -1,
+                                    0));
+                    continue;
+                }
+                PartitionAppendResult appendResult = append(topicData, partitionData);
                 partitionResponses.add(
                         new ProducePartitionResponse(
                                 partitionData.partition(),
-                                ErrorCode.NONE,
+                                appendResult.errorCode(),
                                 appendResult.baseOffset(),
                                 appendResult.leaderEpoch(),
                                 -1,
-                                logManager.logStartOffset(topicData.topic(), partitionData.partition())));
+                                appendResult.logStartOffset()));
             }
             topicResponses.add(new ProduceTopicResponse(topicData.topic(), partitionResponses));
         }
@@ -105,5 +133,27 @@ public class ProduceHandler implements ApiHandler {
                                 requestContext.getCorrelationId(), (short) 2, ErrorCode.NONE, 0))
                 .responseBody(new ProduceResponseBody(topicResponses))
                 .build();
+    }
+
+    private PartitionAppendResult append(ProduceTopicData topicData, ProducePartitionData partitionData) {
+        if (replicaManager != null) {
+            return replicaManager.append(
+                    topicData.topic(), partitionData.partition(), partitionData.records());
+        }
+        LogAppendResult appendResult =
+                logManager.append(topicData.topic(), partitionData.partition(), partitionData.records());
+        return new PartitionAppendResult(
+                ErrorCode.NONE,
+                appendResult.baseOffset(),
+                0,
+                logManager.logStartOffset(topicData.topic(), partitionData.partition()),
+                appendResult.leaderEpoch());
+    }
+
+    private String producerKey(RequestContext requestContext, ProduceRequestBody body) {
+        if (body.transactionalId() != null && !body.transactionalId().isBlank()) {
+            return body.transactionalId();
+        }
+        return requestContext.getClientId();
     }
 }

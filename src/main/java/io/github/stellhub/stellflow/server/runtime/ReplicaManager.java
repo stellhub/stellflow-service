@@ -189,8 +189,25 @@ public class ReplicaManager {
     }
 
     private Optional<PartitionManager> partitionManager(String topic, int partition) {
-        return metadataCache.partition(topic, partition)
-                .map(metadata -> new PartitionManager(logManager, metadata));
+        Optional<PartitionMetadata> metadata = metadataCache.partition(topic, partition);
+        if (metadata.isEmpty()
+                && allowAutoCreateForCompatibility
+                && logManager.containsPartition(topic, partition)) {
+            metadataCache.upsertPartition(
+                    new PartitionMetadata(
+                            topic,
+                            partition,
+                            logManager.leaderId(topic, partition),
+                            logManager.leaderEpoch(topic, partition),
+                            logManager.replicaNodes(topic, partition),
+                            logManager.isrNodes(topic, partition),
+                            logManager.leaderId(topic, partition) == metadataCache.localBrokerId()
+                                    ? PartitionRole.LEADER
+                                    : PartitionRole.FOLLOWER));
+            metadata = metadataCache.partition(topic, partition);
+        }
+        return metadata
+                .map(value -> new PartitionManager(logManager, value));
     }
 
     private void createLocalPartition(String topic, int partition, int leaderEpoch) {

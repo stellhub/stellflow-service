@@ -56,7 +56,8 @@ public final class StellflowBrokerApplication {
                 new ControllerBrokerControlClient(
                         controlPlaneGrpcConfig,
                         replicaFetchManager,
-                        brokerApis.controllerReplicaCoordinator());
+                        brokerApis.controllerReplicaCoordinator(),
+                        brokerApis.metadataCache());
         PrometheusMetricsHttpServer metricsHttpServer =
                 new PrometheusMetricsHttpServer(MetricsHttpConfig.load(), replicaFetchMetrics);
 

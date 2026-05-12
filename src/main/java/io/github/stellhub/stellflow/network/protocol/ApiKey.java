@@ -15,7 +15,13 @@ public enum ApiKey {
     FIND_COORDINATOR((short) 7),
     HEARTBEAT((short) 8),
     JOIN_GROUP((short) 9),
-    SYNC_GROUP((short) 10);
+    SYNC_GROUP((short) 10),
+    CREATE_TOPIC((short) 50),
+    DELETE_TOPIC((short) 51),
+    ALTER_PARTITION((short) 52),
+    DESCRIBE_CLUSTER((short) 53),
+    HEALTH_CHECK((short) 54),
+    DECOMMISSION_BROKER((short) 55);
 
     private final short code;
 
