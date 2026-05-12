@@ -3,7 +3,6 @@ package io.github.stellhub.stellflow.controller.quorum;
 import io.github.stellhub.stellflow.config.EndpointParser;
 import io.github.stellhub.stellflow.controller.control.ControllerMetadataCommandService;
 import io.github.stellhub.stellflow.controller.control.ControllerMetadataStateMachine;
-import io.github.stellhub.stellflow.controller.control.ControllerPartitionMetadata;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.List;
@@ -94,34 +93,11 @@ public class ControllerQuorumManager implements ControllerMetadataCommandService
     }
 
     /**
-     * 提交 broker 注册记录。
+     * 提交单条元数据记录。
      */
     @Override
-    public void registerBroker(
-            int brokerId,
-            String advertisedEndpoint,
-            String advertisedHost,
-            int advertisedPort,
-            long registeredAtMs) {
-        submit(
-                ControllerMetadataRecord.registerBroker(
-                        brokerId, advertisedEndpoint, advertisedHost, advertisedPort, registeredAtMs));
-    }
-
-    /**
-     * 提交单分区 upsert 记录。
-     */
-    @Override
-    public void upsertPartition(ControllerPartitionMetadata metadata) {
-        submit(ControllerMetadataRecord.upsertPartition(metadata));
-    }
-
-    /**
-     * 提交单分区删除记录。
-     */
-    @Override
-    public void removePartition(String topic, int partition) {
-        submit(ControllerMetadataRecord.removePartition(topic, partition));
+    public void submit(ControllerMetadataRecord record) {
+        submitRecordInternal(record);
     }
 
     /**
@@ -149,7 +125,7 @@ public class ControllerQuorumManager implements ControllerMetadataCommandService
         }
     }
 
-    private void submit(ControllerMetadataRecord record) {
+    private void submitRecordInternal(ControllerMetadataRecord record) {
         if (!config.isEnabled()) {
             throw new IllegalStateException("Controller quorum is not enabled");
         }

@@ -7,6 +7,7 @@ import io.github.stellhub.stellflow.controller.control.ControlPlaneGrpcConfig;
 import io.github.stellhub.stellflow.controller.control.ControllerBrokerControlClient;
 import io.github.stellhub.stellflow.controller.control.ControllerBrokerControlServer;
 import io.github.stellhub.stellflow.controller.control.ControllerMetadataStateMachine;
+import io.github.stellhub.stellflow.controller.control.ControllerMetadataDecisionService;
 import io.github.stellhub.stellflow.controller.control.PartitionControlResultRegistry;
 import io.github.stellhub.stellflow.controller.quorum.ControllerQuorumConfig;
 import io.github.stellhub.stellflow.network.protocol.ProtocolCodecRegistry;
@@ -375,22 +376,15 @@ class ReplicaFetchManagerTest {
                 client.start();
 
                 PartitionControlResultRegistry resultRegistry = server.partitionControlResultRegistry();
-                server.metadataCommandService().registerBroker(
+                ControllerMetadataDecisionService decisionService = server.metadataDecisionService();
+                decisionService.registerBroker(
                         0,
                         "stellflow://127.0.0.1:" + leaderPort,
                         "127.0.0.1",
                         leaderPort,
                         System.currentTimeMillis());
-                server.metadataCommandService().upsertPartition(
-                        ControllerMetadataStateMachine.partition(
-                                "replica-grpc",
-                                0,
-                                0,
-                                1,
-                                List.of(0, 2),
-                                List.of(0, 2),
-                                null,
-                                null));
+                waitUntil(() -> server.metadataStateMachine().brokers().size() == 2, 5000);
+                decisionService.createTopic("replica-grpc", 1, 2);
 
                 leaderBrokerApis
                         .logManager()
@@ -416,16 +410,14 @@ class ReplicaFetchManagerTest {
                                 followerLogManager.read("replica-grpc", 0, 0, 4096).records(),
                                 StandardCharsets.UTF_8));
 
-                server.metadataCommandService().upsertPartition(
-                        ControllerMetadataStateMachine.partition(
-                                "replica-grpc",
-                                0,
-                                2,
-                                3,
-                                List.of(0, 2),
-                                List.of(0, 2),
-                                null,
-                                1L));
+                decisionService.changeLeaderAndIsr(
+                        "replica-grpc",
+                        0,
+                        2,
+                        3,
+                        List.of(0, 2),
+                        null,
+                        1L);
 
                 waitUntil(
                         () -> !resultRegistry.latestReport(2).isEmpty(),

@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
@@ -21,6 +22,7 @@ public class ControllerMetadataStateMachine {
     private final ControllerPartitionControlRegistry partitionControlRegistry;
     private final PartitionControlResultRegistry partitionControlResultRegistry;
     private final Map<Integer, BrokerRegistrationMetadata> brokers = new ConcurrentHashMap<>();
+    private final Map<String, ControllerTopicMetadata> topics = new ConcurrentHashMap<>();
     private final Map<String, ControllerPartitionMetadata> partitions = new ConcurrentHashMap<>();
 
     public ControllerMetadataStateMachine(
@@ -57,7 +59,12 @@ public class ControllerMetadataStateMachine {
         brokers.put(
                 brokerId,
                 new BrokerRegistrationMetadata(
-                        brokerId, advertisedEndpoint, advertisedHost, advertisedPort, registeredAtMs));
+                        brokerId,
+                        advertisedEndpoint,
+                        advertisedHost,
+                        advertisedPort,
+                        registeredAtMs,
+                        false));
         recomputeSnapshots();
     }
 
@@ -90,6 +97,186 @@ public class ControllerMetadataStateMachine {
     }
 
     /**
+     * 应用 topic 创建结果。
+     */
+    public synchronized void createTopic(String topic, int partitionCount, long createdAtMs) {
+        topics.put(topic, new ControllerTopicMetadata(topic, partitionCount, createdAtMs));
+        recomputeSnapshots();
+    }
+
+    /**
+     * 删除 topic 及其所有分区。
+     */
+    public synchronized void deleteTopic(String topic) {
+        topics.remove(topic);
+        partitions.entrySet().removeIf(entry -> entry.getValue().topic().equals(topic));
+        recomputeSnapshots();
+    }
+
+    /**
+     * 扩大 topic 分区数。
+     */
+    public synchronized void expandTopicPartitions(String topic, int partitionCount) {
+        ControllerTopicMetadata current = topics.get(topic);
+        long createdAtMs = current != null ? current.createdAtMs() : System.currentTimeMillis();
+        topics.put(topic, new ControllerTopicMetadata(topic, partitionCount, createdAtMs));
+        recomputeSnapshots();
+    }
+
+    /**
+     * 应用分区拓扑变更。
+     */
+    public synchronized void updatePartitionTopology(String topic, int partition, List<Integer> replicaNodes) {
+        ControllerPartitionMetadata current = partitions.get(key(topic, partition));
+        List<Integer> sanitizedReplicas =
+                replicaNodes == null || replicaNodes.isEmpty()
+                        ? current != null && current.replicaNodes() != null && !current.replicaNodes().isEmpty()
+                                ? current.replicaNodes()
+                                : List.of()
+                        : List.copyOf(replicaNodes);
+        int leaderId =
+                current != null
+                        ? current.leaderId()
+                        : sanitizedReplicas.isEmpty() ? -1 : sanitizedReplicas.get(0);
+        int leaderEpoch = current != null ? current.leaderEpoch() : 0;
+        List<Integer> isrNodes =
+                current != null && current.isrNodes() != null && !current.isrNodes().isEmpty()
+                        ? current.isrNodes()
+                        : sanitizedReplicas;
+        ControllerPartitionMetadata merged =
+                sanitize(
+                        new ControllerPartitionMetadata(
+                                topic,
+                                partition,
+                                leaderId,
+                                leaderEpoch,
+                                sanitizedReplicas,
+                                isrNodes,
+                                current == null ? null : current.truncateToLeaderEpoch(),
+                                current == null ? null : current.truncateToOffset()));
+        partitions.put(key(topic, partition), merged);
+        recomputeSnapshots();
+    }
+
+    /**
+     * 应用 leader 与 ISR 变更。
+     */
+    public synchronized void updatePartitionLeaderAndIsr(
+            String topic,
+            int partition,
+            int leaderId,
+            int leaderEpoch,
+            List<Integer> isrNodes,
+            Integer truncateToLeaderEpoch,
+            Long truncateToOffset) {
+        ControllerPartitionMetadata current = partitions.get(key(topic, partition));
+        List<Integer> replicaNodes =
+                current != null && current.replicaNodes() != null && !current.replicaNodes().isEmpty()
+                        ? current.replicaNodes()
+                        : List.of(leaderId);
+        ControllerPartitionMetadata merged =
+                sanitize(
+                        new ControllerPartitionMetadata(
+                                topic,
+                                partition,
+                                leaderId,
+                                leaderEpoch,
+                                replicaNodes,
+                                isrNodes,
+                                truncateToLeaderEpoch,
+                                truncateToOffset));
+        partitions.put(key(topic, partition), merged);
+        recomputeSnapshots();
+    }
+
+    /**
+     * 将 broker 标记为 fenced。
+     */
+    public synchronized void fenceBroker(int brokerId) {
+        BrokerRegistrationMetadata current = brokers.get(brokerId);
+        if (current == null || current.fenced()) {
+            return;
+        }
+        brokers.put(
+                brokerId,
+                new BrokerRegistrationMetadata(
+                        current.brokerId(),
+                        current.advertisedEndpoint(),
+                        current.advertisedHost(),
+                        current.advertisedPort(),
+                        current.registeredAtMs(),
+                        true));
+        recomputeSnapshots();
+    }
+
+    /**
+     * 将 broker 标记为 unfenced。
+     */
+    public synchronized void unfenceBroker(int brokerId) {
+        BrokerRegistrationMetadata current = brokers.get(brokerId);
+        if (current == null || !current.fenced()) {
+            return;
+        }
+        brokers.put(
+                brokerId,
+                new BrokerRegistrationMetadata(
+                        current.brokerId(),
+                        current.advertisedEndpoint(),
+                        current.advertisedHost(),
+                        current.advertisedPort(),
+                        current.registeredAtMs(),
+                        false));
+        recomputeSnapshots();
+    }
+
+    /**
+     * 收缩分区 ISR。
+     */
+    public synchronized void shrinkPartitionIsr(String topic, int partition, int brokerId, int leaderEpoch) {
+        ControllerPartitionMetadata current = partitions.get(key(topic, partition));
+        if (current == null) {
+            return;
+        }
+        List<Integer> nextIsr =
+                current.isrNodes().stream()
+                        .filter(id -> id != brokerId)
+                        .collect(Collectors.toCollection(ArrayList::new));
+        if (nextIsr.isEmpty()) {
+            nextIsr.add(current.leaderId());
+        }
+        updatePartitionLeaderAndIsr(
+                topic,
+                partition,
+                current.leaderId(),
+                Math.max(current.leaderEpoch(), leaderEpoch),
+                List.copyOf(nextIsr),
+                current.truncateToLeaderEpoch(),
+                current.truncateToOffset());
+    }
+
+    /**
+     * 扩大分区 ISR。
+     */
+    public synchronized void expandPartitionIsr(String topic, int partition, int brokerId, int leaderEpoch) {
+        ControllerPartitionMetadata current = partitions.get(key(topic, partition));
+        if (current == null) {
+            return;
+        }
+        List<Integer> nextIsr = new ArrayList<>(current.isrNodes());
+        if (!nextIsr.contains(brokerId)) {
+            nextIsr.add(brokerId);
+        }
+        updatePartitionLeaderAndIsr(
+                topic,
+                partition,
+                current.leaderId(),
+                Math.max(current.leaderEpoch(), leaderEpoch),
+                List.copyOf(nextIsr),
+                current.truncateToLeaderEpoch(),
+                current.truncateToOffset());
+    }
+
+    /**
      * 记录 broker 对 partition control 的应用结果。
      */
     public synchronized void recordPartitionControlResults(
@@ -109,6 +296,34 @@ public class ControllerMetadataStateMachine {
      */
     public synchronized List<BrokerRegistrationMetadata> brokers() {
         return List.copyOf(brokers.values());
+    }
+
+    /**
+     * 返回单个 broker 元数据。
+     */
+    public synchronized Optional<BrokerRegistrationMetadata> broker(int brokerId) {
+        return Optional.ofNullable(brokers.get(brokerId));
+    }
+
+    /**
+     * 返回 topic 元数据快照。
+     */
+    public synchronized List<ControllerTopicMetadata> topics() {
+        return List.copyOf(topics.values());
+    }
+
+    /**
+     * 返回单个 topic 元数据。
+     */
+    public synchronized Optional<ControllerTopicMetadata> topic(String topic) {
+        return Optional.ofNullable(topics.get(topic));
+    }
+
+    /**
+     * 返回单个分区元数据。
+     */
+    public synchronized Optional<ControllerPartitionMetadata> partition(String topic, int partition) {
+        return Optional.ofNullable(partitions.get(key(topic, partition)));
     }
 
     private ControllerPartitionMetadata sanitize(ControllerPartitionMetadata metadata) {
@@ -146,6 +361,10 @@ public class ControllerMetadataStateMachine {
 
         for (ControllerPartitionMetadata metadata : partitions.values()) {
             for (Integer brokerId : metadata.replicaNodes()) {
+                BrokerRegistrationMetadata replica = brokers.get(brokerId);
+                if (replica == null || replica.fenced()) {
+                    continue;
+                }
                 allBrokerIds.add(brokerId);
                 commandsByBroker
                         .computeIfAbsent(brokerId, ignored -> new ArrayList<>())
@@ -162,11 +381,15 @@ public class ControllerMetadataStateMachine {
             }
 
             BrokerRegistrationMetadata leader = brokers.get(metadata.leaderId());
-            if (leader == null) {
+            if (leader == null || leader.fenced()) {
                 continue;
             }
             for (Integer brokerId : metadata.replicaNodes()) {
                 if (brokerId == metadata.leaderId()) {
+                    continue;
+                }
+                BrokerRegistrationMetadata follower = brokers.get(brokerId);
+                if (follower == null || follower.fenced()) {
                     continue;
                 }
                 assignmentsByBroker

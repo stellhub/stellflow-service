@@ -8,4 +8,5 @@ public record BrokerRegistrationMetadata(
         String advertisedEndpoint,
         String advertisedHost,
         int advertisedPort,
-        long registeredAtMs) {}
+        long registeredAtMs,
+        boolean fenced) {}

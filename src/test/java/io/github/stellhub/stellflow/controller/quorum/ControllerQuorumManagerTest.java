@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import io.github.stellhub.stellflow.controller.control.ControllerAssignmentRegistry;
+import io.github.stellhub.stellflow.controller.control.ControllerMetadataDecisionService;
 import io.github.stellhub.stellflow.controller.control.ControllerMetadataStateMachine;
 import io.github.stellhub.stellflow.controller.control.ControllerPartitionControlRegistry;
 import io.github.stellhub.stellflow.controller.control.PartitionControlResultRegistry;
@@ -46,24 +47,23 @@ class ControllerQuorumManagerTest {
         try (ControllerQuorumManager quorumManager =
                 new ControllerQuorumManager(config, metadataStateMachine)) {
             quorumManager.start();
-            quorumManager.registerBroker(
+            ControllerMetadataDecisionService decisionService =
+                    new ControllerMetadataDecisionService(quorumManager, metadataStateMachine);
+            decisionService.registerBroker(
                     1, "stellflow://broker-a.example.com:9092", "broker-a.example.com", 9092, 10L);
-            quorumManager.upsertPartition(
-                    ControllerMetadataStateMachine.partition(
-                            "orders",
-                            0,
-                            1,
-                            7,
-                            List.of(1, 2),
-                            List.of(1, 2),
-                            null,
-                            null));
+            decisionService.registerBroker(
+                    2, "stellflow://broker-b.example.com:9092", "broker-b.example.com", 9093, 11L);
+            decisionService.createTopic("orders", 1, 2);
 
-            waitUntil(() -> metadataStateMachine.brokers().size() == 1, 5000);
+            waitUntil(() -> metadataStateMachine.brokers().size() == 2, 5000);
             waitUntil(() -> metadataStateMachine.partitions().size() == 1, 5000);
+            waitUntil(() -> metadataStateMachine.topics().size() == 1, 5000);
 
-            assertEquals("broker-a.example.com", metadataStateMachine.brokers().get(0).advertisedHost());
-            assertEquals(7, metadataStateMachine.partitions().get(0).leaderEpoch());
+            assertEquals(
+                    "broker-a.example.com",
+                    metadataStateMachine.broker(1).orElseThrow().advertisedHost());
+            assertEquals(1, metadataStateMachine.partitions().get(0).leaderEpoch());
+            assertEquals("orders", metadataStateMachine.topics().get(0).topic());
             assertFalse(metadataStateMachine.partitions().isEmpty());
         }
     }

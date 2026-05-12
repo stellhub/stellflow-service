@@ -32,6 +32,8 @@ public final class ControllerMetadataRecordCodec {
             writeNullableInt(dataOutput, record.advertisedPort());
             writeNullableLong(dataOutput, record.registeredAtMs());
             writeNullableString(dataOutput, record.topic());
+            writeNullableInt(dataOutput, record.partitionCount());
+            writeNullableLong(dataOutput, record.topicCreatedAtMs());
             writeNullableInt(dataOutput, record.partition());
             writeNullableInt(dataOutput, record.leaderId());
             writeNullableInt(dataOutput, record.leaderEpoch());
@@ -62,6 +64,8 @@ public final class ControllerMetadataRecordCodec {
                     .advertisedPort(readNullableInt(inputStream))
                     .registeredAtMs(readNullableLong(inputStream))
                     .topic(readNullableString(inputStream))
+                    .partitionCount(readNullableInt(inputStream))
+                    .topicCreatedAtMs(readNullableLong(inputStream))
                     .partition(readNullableInt(inputStream))
                     .leaderId(readNullableInt(inputStream))
                     .leaderEpoch(readNullableInt(inputStream))

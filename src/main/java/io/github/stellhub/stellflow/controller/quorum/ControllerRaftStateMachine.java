@@ -63,11 +63,45 @@ public class ControllerRaftStateMachine extends BaseStateMachine {
                             record.advertisedHost(),
                             record.advertisedPort(),
                             record.registeredAtMs());
-            case UPSERT_PARTITION ->
-                    metadataStateMachine.upsertPartition(
-                            ControllerMetadataRecordCodec.toPartitionMetadata(record));
+            case FENCE_BROKER -> metadataStateMachine.fenceBroker(record.brokerId());
+            case UNFENCE_BROKER -> metadataStateMachine.unfenceBroker(record.brokerId());
+            case CREATE_TOPIC ->
+                    metadataStateMachine.createTopic(
+                            record.topic(), record.partitionCount(), record.topicCreatedAtMs());
+            case DELETE_TOPIC -> metadataStateMachine.deleteTopic(record.topic());
+            case EXPAND_TOPIC_PARTITIONS ->
+                    metadataStateMachine.expandTopicPartitions(
+                            record.topic(), record.partitionCount());
+            case UPDATE_PARTITION_TOPOLOGY ->
+                    metadataStateMachine.updatePartitionTopology(
+                            record.topic(), record.partition(), record.replicaNodes());
+            case UPDATE_PARTITION_LEADER_ISR ->
+                    metadataStateMachine.updatePartitionLeaderAndIsr(
+                            record.topic(),
+                            record.partition(),
+                            record.leaderId(),
+                            record.leaderEpoch(),
+                            record.isrNodes(),
+                            record.truncateToLeaderEpoch(),
+                            record.truncateToOffset());
+            case SHRINK_PARTITION_ISR ->
+                    metadataStateMachine.shrinkPartitionIsr(
+                            record.topic(),
+                            record.partition(),
+                            record.brokerId(),
+                            record.leaderEpoch());
+            case EXPAND_PARTITION_ISR ->
+                    metadataStateMachine.expandPartitionIsr(
+                            record.topic(),
+                            record.partition(),
+                            record.brokerId(),
+                            record.leaderEpoch());
             case REMOVE_PARTITION ->
-                    metadataStateMachine.removePartition(record.topic(), record.partition());
+                    {
+                        if (record.partition() != null && record.partition() >= 0) {
+                            metadataStateMachine.removePartition(record.topic(), record.partition());
+                        }
+                    }
         }
     }
 }

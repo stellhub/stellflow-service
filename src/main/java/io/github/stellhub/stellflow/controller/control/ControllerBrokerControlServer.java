@@ -20,6 +20,7 @@ public class ControllerBrokerControlServer implements AutoCloseable {
     private final PartitionControlResultRegistry partitionControlResultRegistry;
     private final ControllerMetadataStateMachine metadataStateMachine;
     private final ControllerMetadataCommandService metadataCommandService;
+    private final ControllerMetadataDecisionService metadataDecisionService;
     private final ControllerQuorumManager quorumManager;
     private final ControllerReplicaCoordinator replicaCoordinator;
     private Server server;
@@ -61,6 +62,9 @@ public class ControllerBrokerControlServer implements AutoCloseable {
                 quorumManager != null
                         ? quorumManager
                         : new DirectControllerMetadataCommandService(metadataStateMachine);
+        this.metadataDecisionService =
+                new ControllerMetadataDecisionService(
+                        metadataCommandService, metadataStateMachine);
         this.replicaCoordinator = replicaCoordinator;
     }
 
@@ -117,6 +121,10 @@ public class ControllerBrokerControlServer implements AutoCloseable {
 
     public ControllerMetadataCommandService metadataCommandService() {
         return metadataCommandService;
+    }
+
+    public ControllerMetadataDecisionService metadataDecisionService() {
+        return metadataDecisionService;
     }
 
     @Override
