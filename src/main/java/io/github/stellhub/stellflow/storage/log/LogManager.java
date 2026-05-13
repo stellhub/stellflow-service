@@ -54,6 +54,18 @@ public class LogManager implements AutoCloseable {
     }
 
     /**
+     * 读取分区数据的 FileRegion 视图。
+     */
+    public LogFileRegionReadResult readFileRegions(
+            String topic, int partition, long fetchOffset, int maxBytes) {
+        UnifiedLog log = logs.get(new TopicPartition(topic, partition));
+        if (log == null) {
+            return null;
+        }
+        return log.readFileRegions(fetchOffset, maxBytes);
+    }
+
+    /**
      * 读取副本同步数据。
      */
     public ReplicaLogReadResult readReplica(String topic, int partition, long fetchOffset, int maxBytes) {

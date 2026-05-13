@@ -154,6 +154,41 @@ public class UnifiedLog implements AutoCloseable {
     }
 
     /**
+     * 读取可见数据的 FileRegion 视图。
+     */
+    public synchronized LogFileRegionReadResult readFileRegions(long fetchOffset, int maxBytes) {
+        long effectiveFetchOffset = Math.max(fetchOffset, logStartOffset);
+        if (maxBytes <= 0 || effectiveFetchOffset >= logEndOffset) {
+            return new LogFileRegionReadResult(
+                    highWatermark, logStartOffset, highWatermark, effectiveFetchOffset, List.of(), 0);
+        }
+        List<LogFileRegion> fileRegions = new ArrayList<>();
+        long nextFetchOffset = effectiveFetchOffset;
+        int readableBytes = 0;
+        for (LogSegment segment : segments) {
+            if (nextFetchOffset >= segment.nextOffset()) {
+                continue;
+            }
+            if (nextFetchOffset < segment.baseOffset() && fileRegions.isEmpty()) {
+                nextFetchOffset = segment.baseOffset();
+            }
+            LogSegment.SegmentFileRegionReadResult segmentReadResult =
+                    segment.readFileRegions(nextFetchOffset, maxBytes - readableBytes);
+            if (segmentReadResult.fileRegions().isEmpty()) {
+                continue;
+            }
+            fileRegions.addAll(segmentReadResult.fileRegions());
+            readableBytes += segmentReadResult.readableBytes();
+            nextFetchOffset = segmentReadResult.nextOffset();
+            if (readableBytes >= maxBytes) {
+                break;
+            }
+        }
+        return new LogFileRegionReadResult(
+                highWatermark, logStartOffset, highWatermark, nextFetchOffset, fileRegions, readableBytes);
+    }
+
+    /**
      * 读取副本同步数据。
      */
     public synchronized ReplicaLogReadResult readReplica(long fetchOffset, int maxBytes) {

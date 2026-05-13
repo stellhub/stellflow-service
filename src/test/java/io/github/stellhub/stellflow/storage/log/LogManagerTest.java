@@ -5,7 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.stellhub.stellflow.controller.replica.ControllerReplicaCoordinator;
 import io.github.stellhub.stellflow.controller.replica.PartitionControlCommand;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -61,6 +64,62 @@ class LogManagerTest {
         assertTrue(logSegmentCount >= 2);
         assertTrue(offsetIndexCount >= 2);
         assertTrue(timeIndexCount >= 2);
+    }
+
+    /**
+     * 验证 FileRegion 读取视图只暴露 record payload 区间。
+     */
+    @Test
+    void shouldReadFileRegionsAcrossSegments() throws IOException {
+        LogStorageConfig config =
+                LogStorageConfig.builder()
+                        .rootDir(tempDir)
+                        .segmentBytes(64)
+                        .indexIntervalBytes(1)
+                        .build();
+        try (LogManager logManager = new LogManager(config)) {
+            logManager.append("file-region", 0, "segment-a".getBytes(StandardCharsets.UTF_8));
+            logManager.append("file-region", 0, "segment-b".getBytes(StandardCharsets.UTF_8));
+            logManager.append("file-region", 0, "segment-c".getBytes(StandardCharsets.UTF_8));
+
+            LogFileRegionReadResult readResult =
+                    logManager.readFileRegions("file-region", 0, 0, 4096);
+
+            assertEquals(3L, readResult.highWatermark());
+            assertEquals(3L, readResult.nextFetchOffset());
+            assertEquals(27, readResult.readableBytes());
+            assertEquals(3, readResult.fileRegions().size());
+            assertEquals(
+                    "segment-asegment-bsegment-c",
+                    new String(readRegions(readResult.fileRegions()), StandardCharsets.UTF_8));
+            assertTrue(readResult.fileRegions().stream().allMatch(region -> region.position() > 0));
+        }
+    }
+
+    /**
+     * 验证 FileRegion 读取视图保持 offset 与 maxBytes 语义。
+     */
+    @Test
+    void shouldLimitFileRegionsByOffsetAndMaxBytes() throws IOException {
+        LogStorageConfig config =
+                LogStorageConfig.builder()
+                        .rootDir(tempDir)
+                        .segmentBytes(1024)
+                        .indexIntervalBytes(1)
+                        .build();
+        try (LogManager logManager = new LogManager(config)) {
+            logManager.append("file-region-limit", 0, "first".getBytes(StandardCharsets.UTF_8));
+            logManager.append("file-region-limit", 0, "second".getBytes(StandardCharsets.UTF_8));
+            logManager.append("file-region-limit", 0, "third".getBytes(StandardCharsets.UTF_8));
+
+            LogFileRegionReadResult readResult =
+                    logManager.readFileRegions("file-region-limit", 0, 1, 6);
+
+            assertEquals(2L, readResult.nextFetchOffset());
+            assertEquals(6, readResult.readableBytes());
+            assertEquals(
+                    "second", new String(readRegions(readResult.fileRegions()), StandardCharsets.UTF_8));
+        }
     }
 
     /**
@@ -396,5 +455,20 @@ class LogManagerTest {
                             logManager.read("epoch-coordinator", 0, 0, 4096).records(),
                             StandardCharsets.UTF_8));
         }
+    }
+
+    private byte[] readRegions(List<LogFileRegion> fileRegions) throws IOException {
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        for (LogFileRegion fileRegion : fileRegions) {
+            ByteBuffer buffer = ByteBuffer.allocate(Math.toIntExact(fileRegion.count()));
+            try (FileChannel channel = FileChannel.open(fileRegion.file(), StandardOpenOption.READ)) {
+                channel.position(fileRegion.position());
+                while (buffer.hasRemaining() && channel.read(buffer) >= 0) {
+                    // Read until the requested region is materialized for assertion.
+                }
+            }
+            outputStream.write(buffer.array());
+        }
+        return outputStream.toByteArray();
     }
 }

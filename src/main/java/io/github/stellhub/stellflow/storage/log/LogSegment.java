@@ -219,6 +219,30 @@ public class LogSegment implements AutoCloseable {
     }
 
     /**
+     * 从指定 offset 开始读取 record payload 的文件区间视图。
+     */
+    public synchronized SegmentFileRegionReadResult readFileRegions(long fetchOffset, int maxBytes) {
+        if (fetchOffset >= nextOffset || maxBytes <= 0) {
+            return new SegmentFileRegionReadResult(fetchOffset, java.util.List.of(), 0);
+        }
+        java.util.List<LogFileRegion> fileRegions = new java.util.ArrayList<>();
+        long nextReadableOffset = fetchOffset;
+        int readableBytes = 0;
+        for (var entry : entries.tailMap(fetchOffset, true).entrySet()) {
+            EntryMetadata metadata = entry.getValue();
+            if (readableBytes + metadata.recordLength() > maxBytes && readableBytes > 0) {
+                break;
+            }
+            fileRegions.add(
+                    new LogFileRegion(
+                            logFile, metadata.position() + ENTRY_HEADER_BYTES, metadata.recordLength()));
+            readableBytes += metadata.recordLength();
+            nextReadableOffset = entry.getKey() + 1;
+        }
+        return new SegmentFileRegionReadResult(nextReadableOffset, fileRegions, readableBytes);
+    }
+
+    /**
      * 当前段的起始 offset。
      */
     public long baseOffset() {
@@ -543,6 +567,20 @@ public class LogSegment implements AutoCloseable {
      * 段级批量读取结果。
      */
     public record SegmentReadResult(long nextOffset, byte[] records) {}
+
+    /**
+     * 段级 FileRegion 读取结果。
+     */
+    public record SegmentFileRegionReadResult(
+            long nextOffset, java.util.List<LogFileRegion> fileRegions, int readableBytes) {
+
+        public SegmentFileRegionReadResult {
+            fileRegions = fileRegions == null ? java.util.List.of() : java.util.List.copyOf(fileRegions);
+            if (readableBytes < 0) {
+                throw new IllegalArgumentException("readableBytes must not be negative");
+            }
+        }
+    }
 
     /**
      * 段级复制读取结果。
