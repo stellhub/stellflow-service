@@ -3,6 +3,7 @@ package io.github.stellhub.stellflow.controller.quorum;
 import io.github.stellhub.stellflow.config.EndpointParser;
 import io.github.stellhub.stellflow.controller.control.ControllerMetadataCommandService;
 import io.github.stellhub.stellflow.controller.control.ControllerMetadataStateMachine;
+import io.github.stellhub.stellflow.observability.metrics.StellflowMetrics;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.List;
@@ -35,6 +36,7 @@ public class ControllerQuorumManager implements ControllerMetadataCommandService
     private final ControllerQuorumConfig config;
     private final ControllerMetadataStateMachine metadataStateMachine;
     private final ControllerRaftStateMachine raftStateMachine;
+    private final StellflowMetrics metrics;
     @Getter private final RaftGroup raftGroup;
     @Getter private final RaftPeer selfPeer;
     private final RaftProperties raftProperties;
@@ -44,8 +46,16 @@ public class ControllerQuorumManager implements ControllerMetadataCommandService
 
     public ControllerQuorumManager(
             ControllerQuorumConfig config, ControllerMetadataStateMachine metadataStateMachine) {
+        this(config, metadataStateMachine, StellflowMetrics.global());
+    }
+
+    public ControllerQuorumManager(
+            ControllerQuorumConfig config,
+            ControllerMetadataStateMachine metadataStateMachine,
+            StellflowMetrics metrics) {
         this.config = config;
         this.metadataStateMachine = metadataStateMachine;
+        this.metrics = metrics;
         this.raftStateMachine = new ControllerRaftStateMachine(metadataStateMachine);
         this.raftGroup = buildGroup(config);
         this.selfPeer =
@@ -97,7 +107,20 @@ public class ControllerQuorumManager implements ControllerMetadataCommandService
      */
     @Override
     public void submit(ControllerMetadataRecord record) {
-        submitRecordInternal(record);
+        long startMs = System.currentTimeMillis();
+        try {
+            submitRecordInternal(record);
+            metrics.recordController(
+                    "metadata_" + record.type().name().toLowerCase(),
+                    "success",
+                    System.currentTimeMillis() - startMs);
+        } catch (RuntimeException exception) {
+            metrics.recordController(
+                    "metadata_" + record.type().name().toLowerCase(),
+                    "failure",
+                    System.currentTimeMillis() - startMs);
+            throw exception;
+        }
     }
 
     /**

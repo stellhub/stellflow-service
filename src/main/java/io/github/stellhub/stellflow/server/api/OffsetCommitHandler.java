@@ -7,6 +7,7 @@ import io.github.stellhub.stellflow.network.protocol.OffsetCommitPartitionRespon
 import io.github.stellhub.stellflow.network.protocol.OffsetCommitRequestBody;
 import io.github.stellhub.stellflow.network.protocol.OffsetCommitResponseBody;
 import io.github.stellhub.stellflow.network.protocol.OffsetCommitTopicResponse;
+import io.github.stellhub.stellflow.observability.metrics.StellflowMetrics;
 import io.github.stellhub.stellflow.network.protocol.ResponseHeader;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,9 +18,15 @@ import java.util.List;
 public class OffsetCommitHandler implements ApiHandler {
 
     private final OffsetStore offsetStore;
+    private final StellflowMetrics metrics;
 
     public OffsetCommitHandler(OffsetStore offsetStore) {
+        this(offsetStore, StellflowMetrics.global());
+    }
+
+    public OffsetCommitHandler(OffsetStore offsetStore, StellflowMetrics metrics) {
         this.offsetStore = offsetStore;
+        this.metrics = metrics;
     }
 
     @Override
@@ -29,6 +36,7 @@ public class OffsetCommitHandler implements ApiHandler {
 
     @Override
     public ResponseContext handle(RequestContext requestContext) {
+        long startMs = System.currentTimeMillis();
         OffsetCommitRequestBody body = (OffsetCommitRequestBody) requestContext.getRequestBody();
         List<OffsetCommitTopicResponse> topicResponses = new ArrayList<>();
         for (var topic : body.topics()) {
@@ -45,6 +53,11 @@ public class OffsetCommitHandler implements ApiHandler {
             }
             topicResponses.add(new OffsetCommitTopicResponse(topic.topic(), partitionResponses));
         }
+        metrics.recordGroup(
+                ApiKey.OFFSET_COMMIT,
+                body.groupId(),
+                ErrorCode.NONE,
+                System.currentTimeMillis() - startMs);
         return ResponseContext.builder()
                 .requestContext(requestContext)
                 .apiKey(ApiKey.OFFSET_COMMIT)

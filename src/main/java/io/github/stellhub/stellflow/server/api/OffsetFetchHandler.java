@@ -7,6 +7,7 @@ import io.github.stellhub.stellflow.network.protocol.OffsetFetchPartitionRespons
 import io.github.stellhub.stellflow.network.protocol.OffsetFetchRequestBody;
 import io.github.stellhub.stellflow.network.protocol.OffsetFetchResponseBody;
 import io.github.stellhub.stellflow.network.protocol.OffsetFetchTopicResponse;
+import io.github.stellhub.stellflow.observability.metrics.StellflowMetrics;
 import io.github.stellhub.stellflow.network.protocol.ResponseHeader;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,9 +18,15 @@ import java.util.List;
 public class OffsetFetchHandler implements ApiHandler {
 
     private final OffsetStore offsetStore;
+    private final StellflowMetrics metrics;
 
     public OffsetFetchHandler(OffsetStore offsetStore) {
+        this(offsetStore, StellflowMetrics.global());
+    }
+
+    public OffsetFetchHandler(OffsetStore offsetStore, StellflowMetrics metrics) {
         this.offsetStore = offsetStore;
+        this.metrics = metrics;
     }
 
     @Override
@@ -29,6 +36,7 @@ public class OffsetFetchHandler implements ApiHandler {
 
     @Override
     public ResponseContext handle(RequestContext requestContext) {
+        long startMs = System.currentTimeMillis();
         OffsetFetchRequestBody body = (OffsetFetchRequestBody) requestContext.getRequestBody();
         List<OffsetFetchTopicResponse> topicResponses = new ArrayList<>();
         for (var topic : body.topics()) {
@@ -53,6 +61,11 @@ public class OffsetFetchHandler implements ApiHandler {
             }
             topicResponses.add(new OffsetFetchTopicResponse(topic.topic(), partitionResponses));
         }
+        metrics.recordGroup(
+                ApiKey.OFFSET_FETCH,
+                body.groupId(),
+                ErrorCode.NONE,
+                System.currentTimeMillis() - startMs);
         return ResponseContext.builder()
                 .requestContext(requestContext)
                 .apiKey(ApiKey.OFFSET_FETCH)

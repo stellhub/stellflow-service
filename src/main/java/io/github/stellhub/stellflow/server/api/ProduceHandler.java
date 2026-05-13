@@ -11,6 +11,7 @@ import io.github.stellhub.stellflow.network.protocol.ProduceResponseBody;
 import io.github.stellhub.stellflow.network.protocol.ProduceTopicData;
 import io.github.stellhub.stellflow.network.protocol.ProduceTopicResponse;
 import io.github.stellhub.stellflow.network.protocol.ResponseHeader;
+import io.github.stellhub.stellflow.observability.metrics.StellflowMetrics;
 import io.github.stellhub.stellflow.producer.ProducerAppendDecision;
 import io.github.stellhub.stellflow.producer.ProducerStateManager;
 import io.github.stellhub.stellflow.storage.log.LogAppendResult;
@@ -28,11 +29,13 @@ public class ProduceHandler implements ApiHandler {
     private final LogManager logManager;
     private final ReplicaManager replicaManager;
     private final ProducerStateManager producerStateManager;
+    private final StellflowMetrics metrics;
 
     public ProduceHandler(LogManager logManager) {
         this.logManager = logManager;
         this.replicaManager = null;
         this.producerStateManager = new ProducerStateManager();
+        this.metrics = StellflowMetrics.global();
     }
 
     public ProduceHandler(ReplicaManager replicaManager) {
@@ -40,9 +43,17 @@ public class ProduceHandler implements ApiHandler {
     }
 
     public ProduceHandler(ReplicaManager replicaManager, ProducerStateManager producerStateManager) {
+        this(replicaManager, producerStateManager, StellflowMetrics.global());
+    }
+
+    public ProduceHandler(
+            ReplicaManager replicaManager,
+            ProducerStateManager producerStateManager,
+            StellflowMetrics metrics) {
         this.logManager = null;
         this.replicaManager = replicaManager;
         this.producerStateManager = producerStateManager;
+        this.metrics = metrics;
     }
 
     @Override
@@ -90,7 +101,9 @@ public class ProduceHandler implements ApiHandler {
         for (ProduceTopicData topicData : produceRequestBody.topicData()) {
             List<ProducePartitionResponse> partitionResponses = new ArrayList<>();
             for (ProducePartitionData partitionData : topicData.partitions()) {
+                long partitionStartMs = System.currentTimeMillis();
                 if (partitionData.records() == null || partitionData.records().length == 0) {
+                    recordProduce(topicData.topic(), partitionData.partition(), ErrorCode.INVALID_RECORD, 0, partitionStartMs);
                     partitionResponses.add(
                             new ProducePartitionResponse(
                                     partitionData.partition(),
@@ -102,6 +115,7 @@ public class ProduceHandler implements ApiHandler {
                     continue;
                 }
                 if (produceRequestBody.acks() < -1 || produceRequestBody.acks() > 1) {
+                    recordProduce(topicData.topic(), partitionData.partition(), ErrorCode.INVALID_REQUEST, 0, partitionStartMs);
                     partitionResponses.add(
                             new ProducePartitionResponse(
                                     partitionData.partition(),
@@ -119,6 +133,12 @@ public class ProduceHandler implements ApiHandler {
                                 partitionData.partition(),
                                 partitionData.records());
                 if (decision.errorCode() != ErrorCode.NONE) {
+                    recordProduce(
+                            topicData.topic(),
+                            partitionData.partition(),
+                            decision.errorCode(),
+                            partitionData.records().length,
+                            partitionStartMs);
                     partitionResponses.add(
                             new ProducePartitionResponse(
                                     partitionData.partition(),
@@ -130,6 +150,12 @@ public class ProduceHandler implements ApiHandler {
                     continue;
                 }
                 if (!decision.appendRequired()) {
+                    recordProduce(
+                            topicData.topic(),
+                            partitionData.partition(),
+                            ErrorCode.NONE,
+                            0,
+                            partitionStartMs);
                     partitionResponses.add(
                             new ProducePartitionResponse(
                                     partitionData.partition(),
@@ -141,6 +167,12 @@ public class ProduceHandler implements ApiHandler {
                     continue;
                 }
                 PartitionAppendResult appendResult = append(produceRequestBody, topicData, partitionData);
+                recordProduce(
+                        topicData.topic(),
+                        partitionData.partition(),
+                        appendResult.errorCode(),
+                        partitionData.records().length,
+                        partitionStartMs);
                 if (appendResult.errorCode() == ErrorCode.NONE) {
                     producerStateManager.recordAppendSuccess(
                             decision.batchInfo(),
@@ -200,5 +232,10 @@ public class ProduceHandler implements ApiHandler {
             return body.transactionalId();
         }
         return requestContext.getClientId();
+    }
+
+    private void recordProduce(
+            String topic, int partition, ErrorCode errorCode, long bytes, long startMs) {
+        metrics.recordProduce(topic, partition, errorCode, bytes, System.currentTimeMillis() - startMs);
     }
 }

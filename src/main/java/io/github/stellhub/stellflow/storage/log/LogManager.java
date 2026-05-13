@@ -1,5 +1,6 @@
 package io.github.stellhub.stellflow.storage.log;
 
+import io.github.stellhub.stellflow.observability.metrics.StellflowMetrics;
 import java.io.IOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
@@ -19,14 +20,24 @@ public class LogManager implements AutoCloseable {
     private final LogStorageConfig storageConfig;
     private final Path rootDir;
     private final Map<TopicPartition, UnifiedLog> logs = new ConcurrentHashMap<>();
+    private final StellflowMetrics metrics;
 
     public LogManager(Path rootDir) {
         this(defaultConfigFor(rootDir));
     }
 
+    public LogManager(Path rootDir, StellflowMetrics metrics) {
+        this(defaultConfigFor(rootDir), metrics);
+    }
+
     public LogManager(LogStorageConfig storageConfig) {
+        this(storageConfig, StellflowMetrics.global());
+    }
+
+    public LogManager(LogStorageConfig storageConfig, StellflowMetrics metrics) {
         this.storageConfig = storageConfig;
         this.rootDir = storageConfig.getRootDir();
+        this.metrics = metrics;
         try {
             Files.createDirectories(rootDir);
             loadExistingLogs();
@@ -39,18 +50,39 @@ public class LogManager implements AutoCloseable {
      * 追加分区数据。
      */
     public LogAppendResult append(String topic, int partition, byte[] records) {
-        return getOrCreateLog(new TopicPartition(topic, partition)).appendAsLeader(records);
+        long startMs = System.currentTimeMillis();
+        try {
+            LogAppendResult result =
+                    getOrCreateLog(new TopicPartition(topic, partition)).appendAsLeader(records);
+            recordStorage(
+                    "append",
+                    topic,
+                    partition,
+                    "success",
+                    records == null ? 0 : records.length,
+                    startMs);
+            updateStoragePartition(topic, partition);
+            return result;
+        } catch (RuntimeException exception) {
+            recordStorage("append", topic, partition, "failure", 0, startMs);
+            throw exception;
+        }
     }
 
     /**
      * 读取分区数据。
      */
     public LogReadResult read(String topic, int partition, long fetchOffset, int maxBytes) {
+        long startMs = System.currentTimeMillis();
         UnifiedLog log = logs.get(new TopicPartition(topic, partition));
         if (log == null) {
+            recordStorage("read", topic, partition, "unknown_partition", 0, startMs);
             return null;
         }
-        return log.read(fetchOffset, maxBytes);
+        LogReadResult result = log.read(fetchOffset, maxBytes);
+        recordStorage("read", topic, partition, "success", result.records().length, startMs);
+        updateStoragePartition(topic, partition);
+        return result;
     }
 
     /**
@@ -58,22 +90,32 @@ public class LogManager implements AutoCloseable {
      */
     public LogFileRegionReadResult readFileRegions(
             String topic, int partition, long fetchOffset, int maxBytes) {
+        long startMs = System.currentTimeMillis();
         UnifiedLog log = logs.get(new TopicPartition(topic, partition));
         if (log == null) {
+            recordStorage("read_file_regions", topic, partition, "unknown_partition", 0, startMs);
             return null;
         }
-        return log.readFileRegions(fetchOffset, maxBytes);
+        LogFileRegionReadResult result = log.readFileRegions(fetchOffset, maxBytes);
+        recordStorage("read_file_regions", topic, partition, "success", result.readableBytes(), startMs);
+        updateStoragePartition(topic, partition);
+        return result;
     }
 
     /**
      * 读取副本同步数据。
      */
     public ReplicaLogReadResult readReplica(String topic, int partition, long fetchOffset, int maxBytes) {
+        long startMs = System.currentTimeMillis();
         UnifiedLog log = logs.get(new TopicPartition(topic, partition));
         if (log == null) {
+            recordStorage("read_replica", topic, partition, "unknown_partition", 0, startMs);
             return null;
         }
-        return log.readReplica(fetchOffset, maxBytes);
+        ReplicaLogReadResult result = log.readReplica(fetchOffset, maxBytes);
+        recordStorage("read_replica", topic, partition, "success", replicaBytes(result), startMs);
+        updateStoragePartition(topic, partition);
+        return result;
     }
 
     /**
@@ -115,8 +157,11 @@ public class LogManager implements AutoCloseable {
             int leaderId,
             List<Integer> replicaNodes,
             List<Integer> isr) {
+        long startMs = System.currentTimeMillis();
         getOrCreateLog(new TopicPartition(topic, partition))
                 .updateReplicaTopology(leaderId, replicaNodes, isr);
+        recordStorage("update_replica_topology", topic, partition, "success", 0, startMs);
+        updateStoragePartition(topic, partition);
     }
 
     /**
@@ -133,22 +178,31 @@ public class LogManager implements AutoCloseable {
      */
     public void appendReplicaEntries(
             String topic, int partition, List<ReplicaLogEntry> replicaEntries, int leaderEpoch) {
+        long startMs = System.currentTimeMillis();
         getOrCreateLog(new TopicPartition(topic, partition))
                 .appendReplicaEntries(replicaEntries, leaderEpoch);
+        recordStorage("append_replica", topic, partition, "success", replicaBytes(replicaEntries), startMs);
+        updateStoragePartition(topic, partition);
     }
 
     /**
      * 截断分区日志。
      */
     public void truncateTo(String topic, int partition, long offset) {
+        long startMs = System.currentTimeMillis();
         getOrCreateLog(new TopicPartition(topic, partition)).truncateTo(offset);
+        recordStorage("truncate", topic, partition, "success", 0, startMs);
+        updateStoragePartition(topic, partition);
     }
 
     /**
      * 按 epoch 分叉点截断分区日志。
      */
     public void truncateToLeaderEpoch(String topic, int partition, int epoch) {
+        long startMs = System.currentTimeMillis();
         getOrCreateLog(new TopicPartition(topic, partition)).truncateToLeaderEpoch(epoch);
+        recordStorage("truncate_to_leader_epoch", topic, partition, "success", 0, startMs);
+        updateStoragePartition(topic, partition);
     }
 
     /**
@@ -282,10 +336,14 @@ public class LogManager implements AutoCloseable {
      * 删除单个分区的本地存储。
      */
     public void deletePartition(String topic, int partition) {
+        long startMs = System.currentTimeMillis();
         TopicPartition topicPartition = new TopicPartition(topic, partition);
         UnifiedLog log = logs.remove(topicPartition);
         if (log != null) {
             log.deleteAllData();
+            recordStorage("delete_partition", topic, partition, "success", 0, startMs);
+        } else {
+            recordStorage("delete_partition", topic, partition, "unknown_partition", 0, startMs);
         }
     }
 
@@ -376,6 +434,34 @@ public class LogManager implements AutoCloseable {
         for (UnifiedLog log : logs.values()) {
             log.close();
         }
+    }
+
+    private void recordStorage(
+            String operation, String topic, int partition, String outcome, long bytes, long startMs) {
+        metrics.recordStorageOperation(
+                operation,
+                topic,
+                partition,
+                outcome,
+                bytes,
+                System.currentTimeMillis() - startMs);
+    }
+
+    private void updateStoragePartition(String topic, int partition) {
+        metrics.updateStoragePartition(
+                topic, partition, logEndOffset(topic, partition), highWatermark(topic, partition));
+    }
+
+    private long replicaBytes(ReplicaLogReadResult result) {
+        return replicaBytes(result.entries());
+    }
+
+    private long replicaBytes(List<ReplicaLogEntry> entries) {
+        long bytes = 0;
+        for (ReplicaLogEntry entry : entries) {
+            bytes += entry.records() == null ? 0 : entry.records().length;
+        }
+        return bytes;
     }
 
     /**

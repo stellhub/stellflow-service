@@ -5,6 +5,7 @@ import io.github.stellhub.stellflow.network.protocol.ApiKey;
 import io.github.stellhub.stellflow.network.protocol.ErrorCode;
 import io.github.stellhub.stellflow.network.protocol.HeartbeatRequestBody;
 import io.github.stellhub.stellflow.network.protocol.HeartbeatResponseBody;
+import io.github.stellhub.stellflow.observability.metrics.StellflowMetrics;
 import io.github.stellhub.stellflow.network.protocol.ResponseHeader;
 
 /**
@@ -13,9 +14,15 @@ import io.github.stellhub.stellflow.network.protocol.ResponseHeader;
 public class HeartbeatHandler implements ApiHandler {
 
     private final ConsumerGroupCoordinator coordinator;
+    private final StellflowMetrics metrics;
 
     public HeartbeatHandler(ConsumerGroupCoordinator coordinator) {
+        this(coordinator, StellflowMetrics.global());
+    }
+
+    public HeartbeatHandler(ConsumerGroupCoordinator coordinator, StellflowMetrics metrics) {
         this.coordinator = coordinator;
+        this.metrics = metrics;
     }
 
     @Override
@@ -25,8 +32,14 @@ public class HeartbeatHandler implements ApiHandler {
 
     @Override
     public ResponseContext handle(RequestContext requestContext) {
+        long startMs = System.currentTimeMillis();
         HeartbeatRequestBody body = (HeartbeatRequestBody) requestContext.getRequestBody();
         ErrorCode errorCode = coordinator.heartbeat(body.groupId(), body.generationId(), body.memberId());
+        metrics.recordGroup(
+                ApiKey.HEARTBEAT,
+                body.groupId(),
+                errorCode,
+                System.currentTimeMillis() - startMs);
         return ResponseContext.builder()
                 .requestContext(requestContext)
                 .apiKey(ApiKey.HEARTBEAT)

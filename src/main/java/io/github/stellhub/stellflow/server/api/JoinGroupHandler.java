@@ -5,6 +5,7 @@ import io.github.stellhub.stellflow.network.protocol.ApiKey;
 import io.github.stellhub.stellflow.network.protocol.ErrorCode;
 import io.github.stellhub.stellflow.network.protocol.JoinGroupRequestBody;
 import io.github.stellhub.stellflow.network.protocol.JoinGroupResponseBody;
+import io.github.stellhub.stellflow.observability.metrics.StellflowMetrics;
 import io.github.stellhub.stellflow.network.protocol.ResponseHeader;
 
 /**
@@ -13,9 +14,15 @@ import io.github.stellhub.stellflow.network.protocol.ResponseHeader;
 public class JoinGroupHandler implements ApiHandler {
 
     private final ConsumerGroupCoordinator coordinator;
+    private final StellflowMetrics metrics;
 
     public JoinGroupHandler(ConsumerGroupCoordinator coordinator) {
+        this(coordinator, StellflowMetrics.global());
+    }
+
+    public JoinGroupHandler(ConsumerGroupCoordinator coordinator, StellflowMetrics metrics) {
         this.coordinator = coordinator;
+        this.metrics = metrics;
     }
 
     @Override
@@ -25,6 +32,7 @@ public class JoinGroupHandler implements ApiHandler {
 
     @Override
     public ResponseContext handle(RequestContext requestContext) {
+        long startMs = System.currentTimeMillis();
         JoinGroupRequestBody body = (JoinGroupRequestBody) requestContext.getRequestBody();
         ConsumerGroupCoordinator.JoinResult result =
                 coordinator.joinGroup(
@@ -33,6 +41,11 @@ public class JoinGroupHandler implements ApiHandler {
                         requestContext.getClientId(),
                         "unknown",
                         body.sessionTimeoutMs());
+        metrics.recordGroup(
+                ApiKey.JOIN_GROUP,
+                body.groupId(),
+                result.errorCode(),
+                System.currentTimeMillis() - startMs);
         return ResponseContext.builder()
                 .requestContext(requestContext)
                 .apiKey(ApiKey.JOIN_GROUP)

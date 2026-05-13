@@ -7,6 +7,7 @@ import io.github.stellhub.stellflow.network.protocol.ApiKey;
 import io.github.stellhub.stellflow.network.protocol.EmptyResponseBody;
 import io.github.stellhub.stellflow.network.protocol.ErrorCode;
 import io.github.stellhub.stellflow.network.protocol.ResponseHeader;
+import io.github.stellhub.stellflow.observability.metrics.StellflowMetrics;
 import io.github.stellhub.stellflow.producer.ProducerStateManager;
 import io.github.stellhub.stellflow.controller.replica.ControllerReplicaCoordinator;
 import io.github.stellhub.stellflow.server.runtime.ReplicaManager;
@@ -31,13 +32,22 @@ public class BrokerApis implements AutoCloseable {
     private final MetadataCache metadataCache;
     private final ReplicaManager replicaManager;
     private final RequestGovernance requestGovernance;
+    private final StellflowMetrics metrics;
 
     public BrokerApis(Map<ApiKey, ApiHandler> handlers) {
-        this(handlers, () -> {}, null, null, null, null, RequestGovernance.allowAll());
+        this(handlers, () -> {}, null, null, null, null, RequestGovernance.allowAll(), StellflowMetrics.global());
     }
 
     public BrokerApis(Map<ApiKey, ApiHandler> handlers, AutoCloseable closeableResource) {
-        this(handlers, closeableResource, null, null, null, null, RequestGovernance.allowAll());
+        this(
+                handlers,
+                closeableResource,
+                null,
+                null,
+                null,
+                null,
+                RequestGovernance.allowAll(),
+                StellflowMetrics.global());
     }
 
     public BrokerApis(
@@ -52,7 +62,8 @@ public class BrokerApis implements AutoCloseable {
                 controllerReplicaCoordinator,
                 null,
                 null,
-                RequestGovernance.allowAll());
+                RequestGovernance.allowAll(),
+                StellflowMetrics.global());
     }
 
     public BrokerApis(
@@ -69,7 +80,8 @@ public class BrokerApis implements AutoCloseable {
                 controllerReplicaCoordinator,
                 metadataCache,
                 replicaManager,
-                RequestGovernance.allowAll());
+                RequestGovernance.allowAll(),
+                StellflowMetrics.global());
     }
 
     public BrokerApis(
@@ -80,6 +92,26 @@ public class BrokerApis implements AutoCloseable {
             MetadataCache metadataCache,
             ReplicaManager replicaManager,
             RequestGovernance requestGovernance) {
+        this(
+                handlers,
+                closeableResource,
+                logManager,
+                controllerReplicaCoordinator,
+                metadataCache,
+                replicaManager,
+                requestGovernance,
+                StellflowMetrics.global());
+    }
+
+    public BrokerApis(
+            Map<ApiKey, ApiHandler> handlers,
+            AutoCloseable closeableResource,
+            LogManager logManager,
+            ControllerReplicaCoordinator controllerReplicaCoordinator,
+            MetadataCache metadataCache,
+            ReplicaManager replicaManager,
+            RequestGovernance requestGovernance,
+            StellflowMetrics metrics) {
         this.handlers = Map.copyOf(handlers);
         this.closeableResource = closeableResource;
         this.logManager = logManager;
@@ -87,12 +119,14 @@ public class BrokerApis implements AutoCloseable {
         this.metadataCache = metadataCache;
         this.replicaManager = replicaManager;
         this.requestGovernance = requestGovernance;
+        this.metrics = metrics;
     }
 
     /**
      * 处理请求并生成响应。
      */
     public ResponseContext handleRequest(RequestContext requestContext) {
+        long startMs = System.currentTimeMillis();
         ApiHandler handler = handlers.get(requestContext.getApiKey());
         if (handler == null) {
             log.warn(
@@ -100,14 +134,15 @@ public class BrokerApis implements AutoCloseable {
                     requestContext.getApiKey(),
                     requestContext.getApiVersion(),
                     requestContext.getCorrelationId());
-            return buildErrorResponse(requestContext, ErrorCode.FEATURE_NOT_ENABLED);
+            return recordAndReturn(
+                    buildErrorResponse(requestContext, ErrorCode.FEATURE_NOT_ENABLED), startMs);
         }
         ErrorCode governanceError = requestGovernance.evaluate(requestContext);
         if (governanceError != ErrorCode.NONE) {
-            return buildErrorResponse(requestContext, governanceError);
+            return recordAndReturn(buildErrorResponse(requestContext, governanceError), startMs);
         }
         try {
-            return handler.handle(requestContext);
+            return recordAndReturn(handler.handle(requestContext), startMs);
         } catch (RuntimeException exception) {
             log.error(
                     "Request handling failed apiKey={} apiVersion={} correlationId={}",
@@ -115,7 +150,8 @@ public class BrokerApis implements AutoCloseable {
                     requestContext.getApiVersion(),
                     requestContext.getCorrelationId(),
                     exception);
-            return buildErrorResponse(requestContext, ErrorCode.UNKNOWN_SERVER_ERROR);
+            return recordAndReturn(
+                    buildErrorResponse(requestContext, ErrorCode.UNKNOWN_SERVER_ERROR), startMs);
         }
     }
 
@@ -156,7 +192,8 @@ public class BrokerApis implements AutoCloseable {
      */
     public static BrokerApis defaultBrokerApis(
             int brokerId, String advertisedHost, int advertisedPort, Path logRootDir) {
-        LogManager logManager = new LogManager(logRootDir);
+        StellflowMetrics metrics = StellflowMetrics.global();
+        LogManager logManager = new LogManager(logRootDir, metrics);
         MetadataCache metadataCache = new MetadataCache(brokerId);
         metadataCache.registerLocalBroker(advertisedHost, advertisedPort);
         metadataCache.bootstrapFromLogManager(logManager);
@@ -169,15 +206,15 @@ public class BrokerApis implements AutoCloseable {
         Map<ApiKey, ApiHandler> handlers = new HashMap<>();
         handlers.put(ApiKey.API_VERSIONS, new ApiVersionsHandler());
         handlers.put(ApiKey.METADATA, new MetadataHandler(metadataCache, advertisedHost, advertisedPort));
-        handlers.put(ApiKey.PRODUCE, new ProduceHandler(replicaManager, producerStateManager));
-        handlers.put(ApiKey.FETCH, new FetchHandler(replicaManager));
+        handlers.put(ApiKey.PRODUCE, new ProduceHandler(replicaManager, producerStateManager, metrics));
+        handlers.put(ApiKey.FETCH, new FetchHandler(replicaManager, metrics));
         handlers.put(ApiKey.LIST_OFFSETS, new ListOffsetsHandler(replicaManager));
         handlers.put(ApiKey.FIND_COORDINATOR, new FindCoordinatorHandler(0, advertisedHost, advertisedPort));
-        handlers.put(ApiKey.OFFSET_COMMIT, new OffsetCommitHandler(offsetStore));
-        handlers.put(ApiKey.OFFSET_FETCH, new OffsetFetchHandler(offsetStore));
-        handlers.put(ApiKey.HEARTBEAT, new HeartbeatHandler(groupCoordinator));
-        handlers.put(ApiKey.JOIN_GROUP, new JoinGroupHandler(groupCoordinator));
-        handlers.put(ApiKey.SYNC_GROUP, new SyncGroupHandler(groupCoordinator));
+        handlers.put(ApiKey.OFFSET_COMMIT, new OffsetCommitHandler(offsetStore, metrics));
+        handlers.put(ApiKey.OFFSET_FETCH, new OffsetFetchHandler(offsetStore, metrics));
+        handlers.put(ApiKey.HEARTBEAT, new HeartbeatHandler(groupCoordinator, metrics));
+        handlers.put(ApiKey.JOIN_GROUP, new JoinGroupHandler(groupCoordinator, metrics));
+        handlers.put(ApiKey.SYNC_GROUP, new SyncGroupHandler(groupCoordinator, metrics));
         handlers.put(ApiKey.INIT_PRODUCER_ID, new InitProducerIdHandler(producerStateManager));
         handlers.put(
                 ApiKey.BEGIN_TRANSACTION,
@@ -198,7 +235,8 @@ public class BrokerApis implements AutoCloseable {
                 controllerReplicaCoordinator,
                 metadataCache,
                 replicaManager,
-                RequestGovernance.allowAll());
+                RequestGovernance.allowAll(),
+                metrics);
     }
 
     /**
@@ -229,6 +267,13 @@ public class BrokerApis implements AutoCloseable {
         return replicaManager;
     }
 
+    /**
+     * 返回指标聚合器。
+     */
+    public StellflowMetrics metrics() {
+        return metrics;
+    }
+
     @Override
     public void close() {
         try {
@@ -248,5 +293,15 @@ public class BrokerApis implements AutoCloseable {
                                 requestContext.getCorrelationId(), (short) 2, errorCode, 0))
                 .responseBody(EmptyResponseBody.INSTANCE)
                 .build();
+    }
+
+    private ResponseContext recordAndReturn(ResponseContext responseContext, long startMs) {
+        ErrorCode errorCode =
+                responseContext.getResponseHeader() == null
+                        ? ErrorCode.UNKNOWN_SERVER_ERROR
+                        : responseContext.getResponseHeader().errorCode();
+        metrics.recordBrokerRequest(
+                responseContext.getApiKey(), errorCode, System.currentTimeMillis() - startMs);
+        return responseContext;
     }
 }

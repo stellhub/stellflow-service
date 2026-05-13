@@ -15,12 +15,21 @@ public class PrometheusMetricsHttpServer implements AutoCloseable {
 
     private final MetricsHttpConfig config;
     private final ReplicaFetchMetrics replicaFetchMetrics;
+    private final StellflowMetrics stellflowMetrics;
     private HttpServer server;
 
     public PrometheusMetricsHttpServer(
             MetricsHttpConfig config, ReplicaFetchMetrics replicaFetchMetrics) {
+        this(config, replicaFetchMetrics, StellflowMetrics.global());
+    }
+
+    public PrometheusMetricsHttpServer(
+            MetricsHttpConfig config,
+            ReplicaFetchMetrics replicaFetchMetrics,
+            StellflowMetrics stellflowMetrics) {
         this.config = config;
         this.replicaFetchMetrics = replicaFetchMetrics;
+        this.stellflowMetrics = stellflowMetrics;
     }
 
     /**
@@ -36,8 +45,8 @@ public class PrometheusMetricsHttpServer implements AutoCloseable {
                     config.getPath(),
                     exchange -> {
                         byte[] body =
-                                replicaFetchMetrics
-                                        .renderPrometheus()
+                                (stellflowMetrics.renderPrometheus()
+                                                + replicaFetchMetrics.renderPrometheus())
                                         .getBytes(StandardCharsets.UTF_8);
                         exchange.getResponseHeaders()
                                 .set("Content-Type", "text/plain; version=0.0.4; charset=utf-8");

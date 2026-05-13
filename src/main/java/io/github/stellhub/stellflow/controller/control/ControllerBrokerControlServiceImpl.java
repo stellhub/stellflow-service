@@ -15,6 +15,7 @@ import io.github.stellhub.stellflow.controlplane.ReplicaAssignmentEvent;
 import io.github.stellhub.stellflow.controlplane.ReplicaAssignmentWatchRequest;
 import io.github.stellhub.stellflow.controller.replica.ControllerReplicaCoordinator;
 import io.github.stellhub.stellflow.controller.replica.PartitionControlCommand;
+import io.github.stellhub.stellflow.observability.metrics.StellflowMetrics;
 import io.grpc.stub.ServerCallStreamObserver;
 import io.grpc.stub.StreamObserver;
 import java.util.ArrayList;
@@ -35,6 +36,7 @@ public class ControllerBrokerControlServiceImpl
     private final ControllerMetadataStateMachine metadataStateMachine;
     private final ControllerReplicaCoordinator replicaCoordinator;
     private final String clusterId;
+    private final StellflowMetrics metrics;
 
     public ControllerBrokerControlServiceImpl(
             ControllerAssignmentRegistry assignmentRegistry,
@@ -44,6 +46,26 @@ public class ControllerBrokerControlServiceImpl
             ControllerMetadataStateMachine metadataStateMachine,
             ControllerReplicaCoordinator replicaCoordinator,
             String clusterId) {
+        this(
+                assignmentRegistry,
+                partitionControlRegistry,
+                partitionControlResultRegistry,
+                metadataCommandService,
+                metadataStateMachine,
+                replicaCoordinator,
+                clusterId,
+                StellflowMetrics.global());
+    }
+
+    public ControllerBrokerControlServiceImpl(
+            ControllerAssignmentRegistry assignmentRegistry,
+            ControllerPartitionControlRegistry partitionControlRegistry,
+            PartitionControlResultRegistry partitionControlResultRegistry,
+            ControllerMetadataCommandService metadataCommandService,
+            ControllerMetadataStateMachine metadataStateMachine,
+            ControllerReplicaCoordinator replicaCoordinator,
+            String clusterId,
+            StellflowMetrics metrics) {
         this.assignmentRegistry = assignmentRegistry;
         this.partitionControlRegistry = partitionControlRegistry;
         this.partitionControlResultRegistry = partitionControlResultRegistry;
@@ -51,12 +73,14 @@ public class ControllerBrokerControlServiceImpl
         this.metadataStateMachine = metadataStateMachine;
         this.replicaCoordinator = replicaCoordinator;
         this.clusterId = clusterId;
+        this.metrics = metrics;
     }
 
     @Override
     public void registerBroker(
             BrokerRegistrationRequest request,
             StreamObserver<BrokerRegistrationResponse> responseObserver) {
+        long startMs = System.currentTimeMillis();
         log.info(
                 "Broker registered brokerId={} host={} port={}",
                 request.getBrokerId(),
@@ -78,8 +102,10 @@ public class ControllerBrokerControlServiceImpl
                             .setClusterId(clusterId)
                             .build());
             responseObserver.onCompleted();
+            recordController("register_broker", "success", startMs);
         } catch (RuntimeException exception) {
             log.error("Failed to register broker via metadata command service", exception);
+            recordController("register_broker", "failure", startMs);
             responseObserver.onError(exception);
         }
     }
@@ -88,6 +114,7 @@ public class ControllerBrokerControlServiceImpl
     public void watchReplicaAssignments(
             ReplicaAssignmentWatchRequest request,
             StreamObserver<ReplicaAssignmentEvent> responseObserver) {
+        long startMs = System.currentTimeMillis();
         int brokerId = request.getBrokerId();
         ServerCallStreamObserver<ReplicaAssignmentEvent> serverObserver =
                 (ServerCallStreamObserver<ReplicaAssignmentEvent>) responseObserver;
@@ -116,12 +143,14 @@ public class ControllerBrokerControlServiceImpl
                                 .build());
             }
         }
+        recordController("watch_replica_assignments", "success", startMs);
     }
 
     @Override
     public void applyPartitionControl(
             PartitionControlBatchRequest request,
             StreamObserver<PartitionControlBatchResponse> responseObserver) {
+        long startMs = System.currentTimeMillis();
         int applied = 0;
         for (PartitionControlCommandMessage command : request.getCommandsList()) {
             replicaCoordinator.apply(toCommand(command));
@@ -130,12 +159,14 @@ public class ControllerBrokerControlServiceImpl
         responseObserver.onNext(
                 PartitionControlBatchResponse.newBuilder().setAppliedCount(applied).build());
         responseObserver.onCompleted();
+        recordController("apply_partition_control", "success", startMs);
     }
 
     @Override
     public void watchPartitionControlCommands(
             PartitionControlWatchRequest request,
             StreamObserver<PartitionControlCommandEvent> responseObserver) {
+        long startMs = System.currentTimeMillis();
         int brokerId = request.getBrokerId();
         ServerCallStreamObserver<PartitionControlCommandEvent> serverObserver =
                 (ServerCallStreamObserver<PartitionControlCommandEvent>) responseObserver;
@@ -165,12 +196,14 @@ public class ControllerBrokerControlServiceImpl
                                 .build());
             }
         }
+        recordController("watch_partition_control", "success", startMs);
     }
 
     @Override
     public void reportPartitionControlResults(
             PartitionControlReportRequest request,
             StreamObserver<PartitionControlReportResponse> responseObserver) {
+        long startMs = System.currentTimeMillis();
         metadataStateMachine.recordPartitionControlResults(
                 request.getBrokerId(), request.getResultsList());
         int successCount = 0;
@@ -182,6 +215,11 @@ public class ControllerBrokerControlServiceImpl
         responseObserver.onNext(
                 PartitionControlReportResponse.newBuilder().setAcceptedCount(successCount).build());
         responseObserver.onCompleted();
+        recordController("report_partition_control", "success", startMs);
+    }
+
+    private void recordController(String operation, String outcome, long startMs) {
+        metrics.recordController(operation, outcome, System.currentTimeMillis() - startMs);
     }
 
     private PartitionControlCommand toCommand(PartitionControlCommandMessage command) {
