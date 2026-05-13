@@ -4,8 +4,8 @@ import io.github.stellhub.stellflow.metadata.PartitionMetadata;
 import io.github.stellhub.stellflow.metadata.PartitionRole;
 import io.github.stellhub.stellflow.network.protocol.ErrorCode;
 import io.github.stellhub.stellflow.storage.log.LogAppendResult;
+import io.github.stellhub.stellflow.storage.log.LogFileRegionReadResult;
 import io.github.stellhub.stellflow.storage.log.LogManager;
-import io.github.stellhub.stellflow.storage.log.LogReadResult;
 import io.github.stellhub.stellflow.storage.log.ReplicaLogReadResult;
 import io.github.stellhub.stellflow.storage.log.TimestampOffsetResult;
 import java.util.List;
@@ -86,7 +86,8 @@ public class PartitionManager {
         if (metadata.localRole() != PartitionRole.LEADER) {
             return emptyRead(ErrorCode.NOT_LEADER_OR_FOLLOWER);
         }
-        LogReadResult result = logManager.read(metadata.topic(), metadata.partition(), fetchOffset, maxBytes);
+        LogFileRegionReadResult result =
+                logManager.readFileRegions(metadata.topic(), metadata.partition(), fetchOffset, maxBytes);
         if (result == null) {
             return emptyRead(ErrorCode.UNKNOWN_TOPIC_OR_PARTITION);
         }
@@ -96,8 +97,9 @@ public class PartitionManager {
                 result.logStartOffset(),
                 result.lastStableOffset(),
                 result.nextFetchOffset(),
-                result.records(),
-                List.of());
+                new byte[0],
+                List.of(),
+                result.fileRegions());
     }
 
     /**

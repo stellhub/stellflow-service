@@ -1,6 +1,7 @@
 package io.github.stellhub.stellflow.server.api;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import io.github.stellhub.stellflow.network.protocol.ApiKey;
 import io.github.stellhub.stellflow.network.protocol.FetchPartitionRequest;
@@ -24,6 +25,61 @@ import org.junit.jupiter.api.io.TempDir;
 class FetchHandlerTest {
 
     @TempDir private Path tempDir;
+
+    /**
+     * 验证 consumer fetch 会返回 records 的零拷贝文件区间。
+     */
+    @Test
+    void shouldAttachZeroCopyRecordsForConsumerFetch() {
+        LogStorageConfig config =
+                LogStorageConfig.builder()
+                        .rootDir(tempDir)
+                        .segmentBytes(1024)
+                        .indexIntervalBytes(1)
+                        .retentionSegments(8)
+                        .retentionMs(7L * 24 * 60 * 60 * 1000)
+                        .retentionBytes(1024 * 1024)
+                        .build();
+        try (LogManager logManager = new LogManager(config)) {
+            logManager.append("consumer-fetch", 0, "payload".getBytes(StandardCharsets.UTF_8));
+            FetchHandler fetchHandler = new FetchHandler(logManager);
+            RequestContext requestContext =
+                    RequestContext.builder()
+                            .apiKey(ApiKey.FETCH)
+                            .apiVersion((short) 0)
+                            .correlationId(7)
+                            .requestBody(
+                                    new FetchRequestBody(
+                                            -1,
+                                            500,
+                                            1,
+                                            4096,
+                                            (byte) 0,
+                                            0,
+                                            List.of(
+                                                    new FetchTopicRequest(
+                                                            "consumer-fetch",
+                                                            List.of(
+                                                                    new FetchPartitionRequest(
+                                                                            0, 0, 0, 0, 4096))))))
+                            .build();
+
+            ResponseContext responseContext = fetchHandler.handle(requestContext);
+            FetchPartitionResponse partitionResponse =
+                    ((FetchResponseBody) responseContext.getResponseBody())
+                            .responses()
+                            .get(0)
+                            .partitions()
+                            .get(0);
+
+            assertEquals(0, partitionResponse.records().length);
+            assertFalse(responseContext.getFetchRecordsFileRegions().isEmpty());
+            FetchRecordsFileRegion fileRegion = responseContext.getFetchRecordsFileRegions().get(0);
+            assertEquals("consumer-fetch", fileRegion.topic());
+            assertEquals(0, fileRegion.partition());
+            assertEquals(7, fileRegion.readableBytes());
+        }
+    }
 
     /**
      * 验证 replica fetch 会推进高水位。

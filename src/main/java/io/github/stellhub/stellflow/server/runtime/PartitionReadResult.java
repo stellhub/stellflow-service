@@ -1,6 +1,7 @@
 package io.github.stellhub.stellflow.server.runtime;
 
 import io.github.stellhub.stellflow.network.protocol.ErrorCode;
+import io.github.stellhub.stellflow.storage.log.LogFileRegion;
 import io.github.stellhub.stellflow.storage.log.ReplicaLogEntry;
 import java.util.List;
 
@@ -14,10 +15,31 @@ public record PartitionReadResult(
         long lastStableOffset,
         long nextFetchOffset,
         byte[] records,
-        List<ReplicaLogEntry> replicaEntries) {
+        List<ReplicaLogEntry> replicaEntries,
+        List<LogFileRegion> recordFileRegions) {
 
     public PartitionReadResult {
         records = records == null ? new byte[0] : records;
         replicaEntries = replicaEntries == null ? List.of() : List.copyOf(replicaEntries);
+        recordFileRegions = recordFileRegions == null ? List.of() : List.copyOf(recordFileRegions);
+    }
+
+    public PartitionReadResult(
+            ErrorCode errorCode,
+            long highWatermark,
+            long logStartOffset,
+            long lastStableOffset,
+            long nextFetchOffset,
+            byte[] records,
+            List<ReplicaLogEntry> replicaEntries) {
+        this(
+                errorCode,
+                highWatermark,
+                logStartOffset,
+                lastStableOffset,
+                nextFetchOffset,
+                records,
+                replicaEntries,
+                List.of());
     }
 }

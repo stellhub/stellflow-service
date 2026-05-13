@@ -15,8 +15,9 @@ import io.github.stellhub.stellflow.network.protocol.ResponseHeader;
 import io.github.stellhub.stellflow.controller.replica.ReplicaPayloadCodec;
 import io.github.stellhub.stellflow.server.runtime.PartitionReadResult;
 import io.github.stellhub.stellflow.server.runtime.ReplicaManager;
+import io.github.stellhub.stellflow.storage.log.LogFileRegion;
+import io.github.stellhub.stellflow.storage.log.LogFileRegionReadResult;
 import io.github.stellhub.stellflow.storage.log.LogManager;
-import io.github.stellhub.stellflow.storage.log.LogReadResult;
 import io.github.stellhub.stellflow.storage.log.ReplicaLogReadResult;
 import java.util.ArrayList;
 import java.util.List;
@@ -80,6 +81,7 @@ public class FetchHandler implements ApiHandler {
         }
 
         List<FetchTopicResponse> responses = new ArrayList<>();
+        List<FetchRecordsFileRegion> fetchRecordsFileRegions = new ArrayList<>();
         for (FetchTopicRequest topicRequest : fetchRequestBody.topicPartitions()) {
             List<FetchPartitionResponse> partitionResponses = new ArrayList<>();
             for (FetchPartitionRequest partitionRequest : topicRequest.partitions()) {
@@ -88,7 +90,8 @@ public class FetchHandler implements ApiHandler {
                             handleReplicaFetch(fetchRequestBody, topicRequest, partitionRequest));
                     continue;
                 }
-                partitionResponses.add(handleConsumerFetch(topicRequest, partitionRequest));
+                partitionResponses.add(
+                        handleConsumerFetch(topicRequest, partitionRequest, fetchRecordsFileRegions));
             }
             responses.add(new FetchTopicResponse(topicRequest.topic(), partitionResponses));
         }
@@ -101,6 +104,7 @@ public class FetchHandler implements ApiHandler {
                         new ResponseHeader(
                                 requestContext.getCorrelationId(), (short) 2, ErrorCode.NONE, 0))
                 .responseBody(new FetchResponseBody(fetchRequestBody.sessionId(), responses))
+                .fetchRecordsFileRegions(fetchRecordsFileRegions)
                 .build();
     }
 
@@ -108,7 +112,9 @@ public class FetchHandler implements ApiHandler {
      * 处理 consumer fetch。
      */
     private FetchPartitionResponse handleConsumerFetch(
-            FetchTopicRequest topicRequest, FetchPartitionRequest partitionRequest) {
+            FetchTopicRequest topicRequest,
+            FetchPartitionRequest partitionRequest,
+            List<FetchRecordsFileRegion> fetchRecordsFileRegions) {
         if (replicaManager != null) {
             PartitionReadResult fetchResult =
                     replicaManager.readConsumer(
@@ -116,6 +122,11 @@ public class FetchHandler implements ApiHandler {
                             partitionRequest.partition(),
                             partitionRequest.fetchOffset(),
                             partitionRequest.partitionMaxBytes());
+            addFetchRecordsFileRegions(
+                    fetchRecordsFileRegions,
+                    topicRequest.topic(),
+                    partitionRequest.partition(),
+                    fetchResult.recordFileRegions());
             return new FetchPartitionResponse(
                     partitionRequest.partition(),
                     fetchResult.errorCode(),
@@ -125,8 +136,8 @@ public class FetchHandler implements ApiHandler {
                     List.<AbortedTransaction>of(),
                     fetchResult.records());
         }
-        LogReadResult fetchResult =
-                logManager.read(
+        LogFileRegionReadResult fetchResult =
+                logManager.readFileRegions(
                         topicRequest.topic(),
                         partitionRequest.partition(),
                         partitionRequest.fetchOffset(),
@@ -141,6 +152,11 @@ public class FetchHandler implements ApiHandler {
                     List.of(),
                     new byte[0]);
         }
+        addFetchRecordsFileRegions(
+                fetchRecordsFileRegions,
+                topicRequest.topic(),
+                partitionRequest.partition(),
+                fetchResult.fileRegions());
         return new FetchPartitionResponse(
                 partitionRequest.partition(),
                 ErrorCode.NONE,
@@ -148,7 +164,25 @@ public class FetchHandler implements ApiHandler {
                 fetchResult.logStartOffset(),
                 fetchResult.lastStableOffset(),
                 List.<AbortedTransaction>of(),
-                fetchResult.records());
+                new byte[0]);
+    }
+
+    private void addFetchRecordsFileRegions(
+            List<FetchRecordsFileRegion> fetchRecordsFileRegions,
+            String topic,
+            int partition,
+            List<LogFileRegion> fileRegions) {
+        if (fileRegions == null || fileRegions.isEmpty()) {
+            return;
+        }
+        List<ZeroCopyFileRegion> zeroCopyFileRegions =
+                fileRegions.stream()
+                        .map(region -> new ZeroCopyFileRegion(region.file(), region.position(), region.count()))
+                        .toList();
+        int readableBytes =
+                Math.toIntExact(zeroCopyFileRegions.stream().mapToLong(ZeroCopyFileRegion::count).sum());
+        fetchRecordsFileRegions.add(
+                new FetchRecordsFileRegion(topic, partition, readableBytes, zeroCopyFileRegions));
     }
 
     /**

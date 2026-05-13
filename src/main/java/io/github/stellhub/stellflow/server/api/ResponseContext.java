@@ -19,4 +19,5 @@ public class ResponseContext {
     private final ResponseHeader responseHeader;
     private final ResponseBody responseBody;
     @Builder.Default private final List<ZeroCopyFileRegion> zeroCopyFileRegions = List.of();
+    @Builder.Default private final List<FetchRecordsFileRegion> fetchRecordsFileRegions = List.of();
 }
