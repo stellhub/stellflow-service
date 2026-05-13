@@ -143,7 +143,7 @@ public class BrokerApis implements AutoCloseable {
         metadataCache.registerLocalBroker(advertisedHost, advertisedPort);
         metadataCache.bootstrapFromLogManager(logManager);
         ReplicaManager replicaManager = new ReplicaManager(logManager, metadataCache, true);
-        OffsetStore offsetStore = new OffsetStore();
+        OffsetStore offsetStore = new OffsetStore(logRootDir.resolve("__consumer_offsets.snapshot"));
         ConsumerGroupCoordinator groupCoordinator = new ConsumerGroupCoordinator(offsetStore);
         ControllerReplicaCoordinator controllerReplicaCoordinator =
                 new ControllerReplicaCoordinator(replicaManager);

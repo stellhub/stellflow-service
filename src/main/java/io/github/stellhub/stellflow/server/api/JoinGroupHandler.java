@@ -31,7 +31,8 @@ public class JoinGroupHandler implements ApiHandler {
                         body.groupId(),
                         body.memberId(),
                         requestContext.getClientId(),
-                        "unknown");
+                        "unknown",
+                        body.sessionTimeoutMs());
         return ResponseContext.builder()
                 .requestContext(requestContext)
                 .apiKey(ApiKey.JOIN_GROUP)

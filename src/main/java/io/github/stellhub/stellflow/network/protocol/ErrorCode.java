@@ -24,7 +24,9 @@ public enum ErrorCode {
     NOT_COORDINATOR((short) 17),
     CONCURRENT_TRANSACTIONS((short) 18),
     FENCED_INSTANCE_ID((short) 19),
-    FEATURE_NOT_ENABLED((short) 20);
+    FEATURE_NOT_ENABLED((short) 20),
+    OUT_OF_ORDER_SEQUENCE((short) 21),
+    DUPLICATE_SEQUENCE((short) 22);
 
     private final short code;
 

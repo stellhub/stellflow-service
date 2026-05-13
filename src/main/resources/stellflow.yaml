@@ -31,6 +31,10 @@ stellflow:
       # When the size exceeds this threshold, oldest rolled segments are deleted first.
       retentionBytes: 1073741824
 
+      # Whether every append forces the log file to storage immediately.
+      # Keep true for correctness-focused development; set false for batch flush / page-cache throughput experiments.
+      flushEveryAppend: true
+
   replica:
     fetch:
       # Whether to start the follower background fetch loop inside this broker process.
@@ -125,6 +129,10 @@ stellflow:
 
       # Cluster id returned by the controller-side gRPC service.
       clusterId: stellflow-dev-cluster
+
+      # When true, every topic / partition / leader / ISR metadata mutation must go through
+      # the persistent controller quorum log. Keep false for local single-process development.
+      requirePersistentMetadata: false
 
     reconcile:
       # Whether the controller should run automatic broker/ISR reconciliation in background.

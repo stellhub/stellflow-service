@@ -32,6 +32,7 @@ public class UnifiedLog implements AutoCloseable {
     private final int retentionSegments;
     private final long retentionMs;
     private final long retentionBytes;
+    private final boolean flushEveryAppend;
     private final LogCheckpoint checkpoint;
     private final LeaderEpochCheckpoint leaderEpochCheckpoint;
     private final List<LogSegment> segments = new ArrayList<>();
@@ -53,6 +54,26 @@ public class UnifiedLog implements AutoCloseable {
             int retentionSegments,
             long retentionMs,
             long retentionBytes) {
+        this(
+                topicPartition,
+                partitionDir,
+                segmentBytes,
+                indexIntervalBytes,
+                retentionSegments,
+                retentionMs,
+                retentionBytes,
+                true);
+    }
+
+    public UnifiedLog(
+            TopicPartition topicPartition,
+            Path partitionDir,
+            int segmentBytes,
+            int indexIntervalBytes,
+            int retentionSegments,
+            long retentionMs,
+            long retentionBytes,
+            boolean flushEveryAppend) {
         this.topicPartition = topicPartition;
         this.partitionDir = partitionDir;
         this.segmentBytes = segmentBytes;
@@ -60,6 +81,7 @@ public class UnifiedLog implements AutoCloseable {
         this.retentionSegments = retentionSegments;
         this.retentionMs = retentionMs;
         this.retentionBytes = retentionBytes;
+        this.flushEveryAppend = flushEveryAppend;
         this.checkpoint = new LogCheckpoint(partitionDir.resolve(CHECKPOINT_FILE_NAME));
         this.leaderEpochCheckpoint =
                 new LeaderEpochCheckpoint(partitionDir.resolve(LEADER_EPOCH_CHECKPOINT_FILE_NAME));
@@ -491,7 +513,8 @@ public class UnifiedLog implements AutoCloseable {
             for (Path path : stream) {
                 long baseOffset = parseBaseOffset(path);
                 segments.add(
-                        new LogSegment(path, baseOffset, segmentBytes, indexIntervalBytes));
+                        new LogSegment(
+                                path, baseOffset, segmentBytes, indexIntervalBytes, flushEveryAppend));
             }
         }
         segments.sort(Comparator.comparingLong(LogSegment::baseOffset));
@@ -516,7 +539,11 @@ public class UnifiedLog implements AutoCloseable {
     private LogSegment createSegment(long baseOffset) {
         String fileName = String.format("%020d%s", baseOffset, LOG_EXTENSION);
         return new LogSegment(
-                partitionDir.resolve(fileName), baseOffset, segmentBytes, indexIntervalBytes);
+                partitionDir.resolve(fileName),
+                baseOffset,
+                segmentBytes,
+                indexIntervalBytes,
+                flushEveryAppend);
     }
 
     /**

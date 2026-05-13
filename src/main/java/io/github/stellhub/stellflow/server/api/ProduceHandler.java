@@ -11,6 +11,7 @@ import io.github.stellhub.stellflow.network.protocol.ProduceResponseBody;
 import io.github.stellhub.stellflow.network.protocol.ProduceTopicData;
 import io.github.stellhub.stellflow.network.protocol.ProduceTopicResponse;
 import io.github.stellhub.stellflow.network.protocol.ResponseHeader;
+import io.github.stellhub.stellflow.producer.ProducerAppendDecision;
 import io.github.stellhub.stellflow.producer.ProducerStateManager;
 import io.github.stellhub.stellflow.storage.log.LogAppendResult;
 import io.github.stellhub.stellflow.storage.log.LogManager;
@@ -111,7 +112,42 @@ public class ProduceHandler implements ApiHandler {
                                     0));
                     continue;
                 }
-                PartitionAppendResult appendResult = append(topicData, partitionData);
+                ProducerAppendDecision decision =
+                        producerStateManager.validateAppend(
+                                producerKey(requestContext, produceRequestBody),
+                                topicData.topic(),
+                                partitionData.partition(),
+                                partitionData.records());
+                if (decision.errorCode() != ErrorCode.NONE) {
+                    partitionResponses.add(
+                            new ProducePartitionResponse(
+                                    partitionData.partition(),
+                                    decision.errorCode(),
+                                    -1,
+                                    0,
+                                    -1,
+                                    0));
+                    continue;
+                }
+                if (!decision.appendRequired()) {
+                    partitionResponses.add(
+                            new ProducePartitionResponse(
+                                    partitionData.partition(),
+                                    ErrorCode.NONE,
+                                    decision.duplicateBaseOffset(),
+                                    0,
+                                    -1,
+                                    0));
+                    continue;
+                }
+                PartitionAppendResult appendResult = append(produceRequestBody, topicData, partitionData);
+                if (appendResult.errorCode() == ErrorCode.NONE) {
+                    producerStateManager.recordAppendSuccess(
+                            decision.batchInfo(),
+                            topicData.topic(),
+                            partitionData.partition(),
+                            appendResult.baseOffset());
+                }
                 partitionResponses.add(
                         new ProducePartitionResponse(
                                 partitionData.partition(),
@@ -135,10 +171,17 @@ public class ProduceHandler implements ApiHandler {
                 .build();
     }
 
-    private PartitionAppendResult append(ProduceTopicData topicData, ProducePartitionData partitionData) {
+    private PartitionAppendResult append(
+            ProduceRequestBody produceRequestBody,
+            ProduceTopicData topicData,
+            ProducePartitionData partitionData) {
         if (replicaManager != null) {
             return replicaManager.append(
-                    topicData.topic(), partitionData.partition(), partitionData.records());
+                    topicData.topic(),
+                    partitionData.partition(),
+                    partitionData.records(),
+                    produceRequestBody.acks(),
+                    produceRequestBody.timeoutMs());
         }
         LogAppendResult appendResult =
                 logManager.append(topicData.topic(), partitionData.partition(), partitionData.records());
@@ -147,7 +190,9 @@ public class ProduceHandler implements ApiHandler {
                 appendResult.baseOffset(),
                 0,
                 logManager.logStartOffset(topicData.topic(), partitionData.partition()),
-                appendResult.leaderEpoch());
+                appendResult.leaderEpoch(),
+                logManager.highWatermark(topicData.topic(), partitionData.partition()),
+                appendResult.logEndOffset());
     }
 
     private String producerKey(RequestContext requestContext, ProduceRequestBody body) {

@@ -29,6 +29,7 @@ public class ControlPlaneGrpcConfig {
     @Builder.Default private final int watchReconnectBackoffMs = 1000;
     @Builder.Default private final int registrationIntervalMs = 1000;
     @Builder.Default private final String clusterId = "stellflow-dev-cluster";
+    @Builder.Default private final boolean requirePersistentMetadata = false;
 
     /**
      * 从统一配置加载。
@@ -83,6 +84,11 @@ public class ControlPlaneGrpcConfig {
                                 "registrationIntervalMs",
                                 defaults.getRegistrationIntervalMs()))
                 .clusterId(readString(properties, "clusterId", defaults.getClusterId()))
+                .requirePersistentMetadata(
+                        readBoolean(
+                                properties,
+                                "requirePersistentMetadata",
+                                defaults.isRequirePersistentMetadata()))
                 .build();
     }
 

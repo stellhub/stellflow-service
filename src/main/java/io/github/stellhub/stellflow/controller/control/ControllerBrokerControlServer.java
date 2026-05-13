@@ -55,6 +55,10 @@ public class ControllerBrokerControlServer implements AutoCloseable {
         this.metadataStateMachine =
                 new ControllerMetadataStateMachine(
                         assignmentRegistry, partitionControlRegistry, partitionControlResultRegistry);
+        if (config.isRequirePersistentMetadata() && !quorumConfig.isEnabled()) {
+            throw new IllegalStateException(
+                    "Persistent controller metadata requires stellflow.controller.quorum.enabled=true");
+        }
         this.quorumManager =
                 quorumConfig.isEnabled()
                         ? new ControllerQuorumManager(quorumConfig, metadataStateMachine)

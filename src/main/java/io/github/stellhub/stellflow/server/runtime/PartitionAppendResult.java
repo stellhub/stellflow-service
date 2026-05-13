@@ -10,4 +10,6 @@ public record PartitionAppendResult(
         long baseOffset,
         long logAppendTimeMs,
         long logStartOffset,
-        int leaderEpoch) {}
+        int leaderEpoch,
+        long highWatermark,
+        long logEndOffset) {}

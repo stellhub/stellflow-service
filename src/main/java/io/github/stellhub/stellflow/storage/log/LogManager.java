@@ -309,7 +309,8 @@ public class LogManager implements AutoCloseable {
                                 storageConfig.getIndexIntervalBytes(),
                                 storageConfig.getRetentionSegments(),
                                 storageConfig.getRetentionMs(),
-                                storageConfig.getRetentionBytes()));
+                                storageConfig.getRetentionBytes(),
+                                storageConfig.isFlushEveryAppend()));
     }
 
     /**
@@ -334,7 +335,8 @@ public class LogManager implements AutoCloseable {
                                 storageConfig.getIndexIntervalBytes(),
                                 storageConfig.getRetentionSegments(),
                                 storageConfig.getRetentionMs(),
-                                storageConfig.getRetentionBytes()));
+                                storageConfig.getRetentionBytes(),
+                                storageConfig.isFlushEveryAppend()));
             }
         }
     }
@@ -376,6 +378,7 @@ public class LogManager implements AutoCloseable {
                 .retentionSegments(defaults.getRetentionSegments())
                 .retentionMs(defaults.getRetentionMs())
                 .retentionBytes(defaults.getRetentionBytes())
+                .flushEveryAppend(defaults.isFlushEveryAppend())
                 .build();
     }
 }

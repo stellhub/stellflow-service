@@ -32,17 +32,29 @@ public class ReplicaManager {
      * 追加 producer 数据。
      */
     public PartitionAppendResult append(String topic, int partition, byte[] records) {
+        return append(topic, partition, records, (short) 1, 0);
+    }
+
+    /**
+     * 按指定 acks 语义追加 producer 数据。
+     */
+    public PartitionAppendResult append(
+            String topic, int partition, byte[] records, short acks, int timeoutMs) {
         Optional<PartitionManager> partitionManager = partitionManager(topic, partition);
         if (partitionManager.isEmpty()) {
             if (!allowAutoCreateForCompatibility) {
-                return new PartitionAppendResult(ErrorCode.UNKNOWN_TOPIC_OR_PARTITION, -1, 0, 0, 0);
+                return new PartitionAppendResult(
+                        ErrorCode.UNKNOWN_TOPIC_OR_PARTITION, -1, 0, 0, 0, 0, 0);
             }
             createLocalPartition(topic, partition, 0);
             partitionManager = partitionManager(topic, partition);
         }
         return partitionManager
-                .map(manager -> manager.appendAsLeader(records))
-                .orElseGet(() -> new PartitionAppendResult(ErrorCode.UNKNOWN_TOPIC_OR_PARTITION, -1, 0, 0, 0));
+                .map(manager -> manager.appendAsLeader(records, acks, timeoutMs))
+                .orElseGet(
+                        () ->
+                                new PartitionAppendResult(
+                                        ErrorCode.UNKNOWN_TOPIC_OR_PARTITION, -1, 0, 0, 0, 0, 0));
     }
 
     /**

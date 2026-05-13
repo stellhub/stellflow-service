@@ -20,6 +20,7 @@ public class LogStorageConfig {
     private static final String RETENTION_SEGMENTS_KEY = "stellflow.storage.log.retentionSegments";
     private static final String RETENTION_MS_KEY = "stellflow.storage.log.retentionMs";
     private static final String RETENTION_BYTES_KEY = "stellflow.storage.log.retentionBytes";
+    private static final String FLUSH_EVERY_APPEND_KEY = "stellflow.storage.log.flushEveryAppend";
 
     @Builder.Default private final Path rootDir = Path.of("data", "logs");
     @Builder.Default private final int segmentBytes = 32 * 1024 * 1024;
@@ -27,6 +28,7 @@ public class LogStorageConfig {
     @Builder.Default private final int retentionSegments = 8;
     @Builder.Default private final long retentionMs = 7L * 24 * 60 * 60 * 1000;
     @Builder.Default private final long retentionBytes = 1024L * 1024 * 1024;
+    @Builder.Default private final boolean flushEveryAppend = true;
 
     /**
      * 从统一 YAML 配置加载。
@@ -54,6 +56,9 @@ public class LogStorageConfig {
         long retentionBytes =
                 StellflowConfigLoader.readPositiveLong(
                         properties, RETENTION_BYTES_KEY, defaults.getRetentionBytes());
+        boolean flushEveryAppend =
+                StellflowConfigLoader.readBoolean(
+                        properties, FLUSH_EVERY_APPEND_KEY, defaults.isFlushEveryAppend());
         return LogStorageConfig.builder()
                 .rootDir(Path.of(rootDir))
                 .segmentBytes(segmentBytes)
@@ -61,6 +66,7 @@ public class LogStorageConfig {
                 .retentionSegments(retentionSegments)
                 .retentionMs(retentionMs)
                 .retentionBytes(retentionBytes)
+                .flushEveryAppend(flushEveryAppend)
                 .build();
     }
 }

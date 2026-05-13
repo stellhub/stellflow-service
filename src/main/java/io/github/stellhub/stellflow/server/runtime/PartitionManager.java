@@ -30,21 +30,53 @@ public class PartitionManager {
      * 作为 leader 追加消息。
      */
     public PartitionAppendResult appendAsLeader(byte[] records) {
+        return appendAsLeader(records, (short) 1, 0);
+    }
+
+    /**
+     * 作为 leader 按 acks 语义追加消息。
+     */
+    public PartitionAppendResult appendAsLeader(byte[] records, short acks, int timeoutMs) {
         if (metadata.localRole() != PartitionRole.LEADER) {
             return new PartitionAppendResult(
-                    ErrorCode.NOT_LEADER_OR_FOLLOWER, -1, 0, logStartOffset(), metadata.leaderEpoch());
+                    ErrorCode.NOT_LEADER_OR_FOLLOWER,
+                    -1,
+                    0,
+                    logStartOffset(),
+                    metadata.leaderEpoch(),
+                    0,
+                    0);
         }
         if (records == null || records.length == 0) {
             return new PartitionAppendResult(
-                    ErrorCode.INVALID_RECORD, -1, 0, logStartOffset(), metadata.leaderEpoch());
+                    ErrorCode.INVALID_RECORD,
+                    -1,
+                    0,
+                    logStartOffset(),
+                    metadata.leaderEpoch(),
+                    logManager.highWatermark(metadata.topic(), metadata.partition()),
+                    logManager.logEndOffset(metadata.topic(), metadata.partition()));
         }
         LogAppendResult result = logManager.append(metadata.topic(), metadata.partition(), records);
+        long requiredOffset = result.logEndOffset();
+        if (acks == -1 && !waitForHighWatermark(requiredOffset, timeoutMs)) {
+            return new PartitionAppendResult(
+                    ErrorCode.BROKER_NOT_AVAILABLE,
+                    result.baseOffset(),
+                    0,
+                    logManager.logStartOffset(metadata.topic(), metadata.partition()),
+                    result.leaderEpoch(),
+                    logManager.highWatermark(metadata.topic(), metadata.partition()),
+                    result.logEndOffset());
+        }
         return new PartitionAppendResult(
                 ErrorCode.NONE,
                 result.baseOffset(),
                 0,
                 logManager.logStartOffset(metadata.topic(), metadata.partition()),
-                result.leaderEpoch());
+                result.leaderEpoch(),
+                logManager.highWatermark(metadata.topic(), metadata.partition()),
+                result.logEndOffset());
     }
 
     /**
@@ -146,5 +178,21 @@ public class PartitionManager {
 
     private long logStartOffset() {
         return logManager.logStartOffset(metadata.topic(), metadata.partition());
+    }
+
+    private boolean waitForHighWatermark(long requiredOffset, int timeoutMs) {
+        long deadlineMs = System.currentTimeMillis() + Math.max(timeoutMs, 0);
+        while (logManager.highWatermark(metadata.topic(), metadata.partition()) < requiredOffset) {
+            if (timeoutMs <= 0 || System.currentTimeMillis() >= deadlineMs) {
+                return false;
+            }
+            try {
+                Thread.sleep(Math.min(10, Math.max(1, deadlineMs - System.currentTimeMillis())));
+            } catch (InterruptedException interruptedException) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return true;
     }
 }

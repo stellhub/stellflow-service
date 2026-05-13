@@ -33,18 +33,29 @@ public class LogSegment implements AutoCloseable {
     private final TimeIndex timeIndex;
     private final int maxSegmentBytes;
     private final int indexIntervalBytes;
+    private final boolean flushEveryAppend;
     private final NavigableMap<Long, EntryMetadata> entries = new TreeMap<>();
 
     private long validSize;
     private long nextOffset;
 
     public LogSegment(Path logFile, long baseOffset, int maxSegmentBytes, int indexIntervalBytes) {
+        this(logFile, baseOffset, maxSegmentBytes, indexIntervalBytes, true);
+    }
+
+    public LogSegment(
+            Path logFile,
+            long baseOffset,
+            int maxSegmentBytes,
+            int indexIntervalBytes,
+            boolean flushEveryAppend) {
         try {
             Files.createDirectories(logFile.getParent());
             this.baseOffset = baseOffset;
             this.logFile = logFile;
             this.maxSegmentBytes = maxSegmentBytes;
             this.indexIntervalBytes = indexIntervalBytes;
+            this.flushEveryAppend = flushEveryAppend;
             this.fileChannel =
                     FileChannel.open(
                             logFile,
@@ -166,7 +177,9 @@ public class LogSegment implements AutoCloseable {
             fileChannel.position(validSize);
             writeFully(headerBuffer);
             writeFully(ByteBuffer.wrap(safeRecords));
-            fileChannel.force(false);
+            if (flushEveryAppend) {
+                fileChannel.force(false);
+            }
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to append records into " + logFile, exception);
         }
