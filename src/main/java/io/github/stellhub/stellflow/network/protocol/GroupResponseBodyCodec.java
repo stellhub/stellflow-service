@@ -30,10 +30,16 @@ public class GroupResponseBodyCodec implements ResponseBodyCodec<ResponseBody> {
 
     @Override
     public void encode(ResponseBody body, ByteBuf buffer) {
-        ErrorCode errorCode =
-                body instanceof HeartbeatResponseBody heartbeat
-                        ? heartbeat.errorCode()
-                        : ((SyncGroupResponseBody) body).errorCode();
-        buffer.writeShort(errorCode.code());
+        if (body instanceof HeartbeatResponseBody heartbeat) {
+            buffer.writeShort(heartbeat.errorCode().code());
+            return;
+        }
+        SyncGroupResponseBody syncGroup = (SyncGroupResponseBody) body;
+        buffer.writeShort(syncGroup.errorCode().code());
+        buffer.writeInt(syncGroup.assignments().size());
+        for (ConsumerPartitionAssignment assignment : syncGroup.assignments()) {
+            ProtocolSerde.writeNullableString(buffer, assignment.topic());
+            buffer.writeInt(assignment.partition());
+        }
     }
 }

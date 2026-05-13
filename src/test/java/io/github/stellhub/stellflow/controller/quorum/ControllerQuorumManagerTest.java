@@ -11,6 +11,7 @@ import io.github.stellhub.stellflow.controller.control.PartitionControlResultReg
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -66,6 +67,78 @@ class ControllerQuorumManagerTest {
             assertEquals("orders", metadataStateMachine.topics().get(0).topic());
             assertFalse(metadataStateMachine.partitions().isEmpty());
         }
+    }
+
+    /**
+     * 验证三节点 quorum 可提交并复制元数据记录。
+     */
+    @Test
+    void shouldApplyCommittedMetadataRecordsThroughThreeNodeQuorum() throws Exception {
+        int p1 = findFreePort();
+        int p2 = findFreePort();
+        int p3 = findFreePort();
+        String peers =
+                "c1@grpc://127.0.0.1:"
+                        + p1
+                        + ",c2@grpc://127.0.0.1:"
+                        + p2
+                        + ",c3@grpc://127.0.0.1:"
+                        + p3;
+        List<ControllerMetadataStateMachine> stateMachines = new ArrayList<>();
+        List<ControllerQuorumManager> managers = new ArrayList<>();
+        try {
+            stateMachines.add(stateMachine());
+            stateMachines.add(stateMachine());
+            stateMachines.add(stateMachine());
+            managers.add(manager("c1", p1, peers, tempDir.resolve("q1"), stateMachines.get(0)));
+            managers.add(manager("c2", p2, peers, tempDir.resolve("q2"), stateMachines.get(1)));
+            managers.add(manager("c3", p3, peers, tempDir.resolve("q3"), stateMachines.get(2)));
+            for (ControllerQuorumManager manager : managers) {
+                manager.start();
+            }
+
+            ControllerMetadataDecisionService decisionService =
+                    new ControllerMetadataDecisionService(managers.get(0), stateMachines.get(0));
+            decisionService.registerBroker(
+                    1, "stellflow://broker-a.example.com:9092", "broker-a.example.com", 9092, 10L);
+            decisionService.createTopic("orders-three-node", 1, 1);
+
+            for (ControllerMetadataStateMachine stateMachine : stateMachines) {
+                waitUntil(() -> stateMachine.brokers().size() == 1, 8000);
+                waitUntil(() -> stateMachine.topics().size() == 1, 8000);
+                assertEquals("orders-three-node", stateMachine.topics().get(0).topic());
+            }
+        } finally {
+            for (ControllerQuorumManager manager : managers) {
+                manager.close();
+            }
+        }
+    }
+
+    private static ControllerMetadataStateMachine stateMachine() {
+        return new ControllerMetadataStateMachine(
+                new ControllerAssignmentRegistry(),
+                new ControllerPartitionControlRegistry(),
+                new PartitionControlResultRegistry());
+    }
+
+    private static ControllerQuorumManager manager(
+            String selfId,
+            int port,
+            String peers,
+            Path storageDir,
+            ControllerMetadataStateMachine stateMachine) {
+        return new ControllerQuorumManager(
+                ControllerQuorumConfig.builder()
+                        .enabled(true)
+                        .selfId(selfId)
+                        .groupId("44444444-4444-4444-4444-444444444444")
+                        .endpoint("grpc://127.0.0.1:" + port)
+                        .storageDir(storageDir)
+                        .peers(peers)
+                        .requestTimeoutMs(8000)
+                        .build(),
+                stateMachine);
     }
 
     private static int findFreePort() throws IOException {

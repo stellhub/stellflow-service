@@ -38,6 +38,13 @@ public class ProducerStateManager {
     }
 
     /**
+     * 初始化幂等 producer 身份。
+     */
+    public ProducerState initProducer(String producerKey) {
+        return getOrCreate(producerKey);
+    }
+
+    /**
      * 校验幂等 producer 序列号并判断是否需要真正追加。
      */
     public ProducerAppendDecision validateAppend(
@@ -131,45 +138,63 @@ public class ProducerStateManager {
     /**
      * 显式开启事务。
      */
-    public void beginTransaction(String transactionalId, long producerId, short producerEpoch) {
+    public ErrorCode beginTransaction(String transactionalId, long producerId, short producerEpoch) {
         ProducerRuntimeState runtimeState =
                 idempotentStates.computeIfAbsent(
                         producerId, ignored -> new ProducerRuntimeState(producerEpoch));
         synchronized (runtimeState) {
+            if (producerEpoch < runtimeState.producerEpoch) {
+                return ErrorCode.FENCED_INSTANCE_ID;
+            }
             if (runtimeState.inTransaction
                     && runtimeState.transactionalId != null
                     && !runtimeState.transactionalId.equals(transactionalId)) {
-                throw new IllegalStateException("Producer already has an active transaction");
+                return ErrorCode.CONCURRENT_TRANSACTIONS;
             }
             runtimeState.transactionalId = transactionalId;
             runtimeState.producerEpoch = producerEpoch;
             runtimeState.inTransaction = true;
+            return ErrorCode.NONE;
         }
     }
 
     /**
      * 提交事务状态。
      */
-    public void commitTransaction(long producerId) {
+    public ErrorCode commitTransaction(long producerId, short producerEpoch) {
         ProducerRuntimeState runtimeState = idempotentStates.get(producerId);
         if (runtimeState == null) {
-            return;
+            return ErrorCode.UNKNOWN_SERVER_ERROR;
         }
         synchronized (runtimeState) {
+            if (producerEpoch != runtimeState.producerEpoch) {
+                return ErrorCode.FENCED_INSTANCE_ID;
+            }
+            if (!runtimeState.inTransaction) {
+                return ErrorCode.INVALID_REQUEST;
+            }
             runtimeState.inTransaction = false;
+            return ErrorCode.NONE;
         }
     }
 
     /**
      * 中止事务状态。
      */
-    public void abortTransaction(long producerId) {
+    public ErrorCode abortTransaction(long producerId, short producerEpoch) {
         ProducerRuntimeState runtimeState = idempotentStates.get(producerId);
         if (runtimeState == null) {
-            return;
+            return ErrorCode.UNKNOWN_SERVER_ERROR;
         }
         synchronized (runtimeState) {
+            if (producerEpoch != runtimeState.producerEpoch) {
+                return ErrorCode.FENCED_INSTANCE_ID;
+            }
+            if (!runtimeState.inTransaction) {
+                return ErrorCode.INVALID_REQUEST;
+            }
             runtimeState.inTransaction = false;
+            return ErrorCode.NONE;
         }
     }
 

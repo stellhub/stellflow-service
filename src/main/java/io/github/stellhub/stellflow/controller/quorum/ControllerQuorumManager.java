@@ -132,16 +132,35 @@ public class ControllerQuorumManager implements ControllerMetadataCommandService
         if (raftClient == null) {
             throw new IllegalStateException("Controller quorum has not been started");
         }
-        try {
-            byte[] bytes = ControllerMetadataRecordCodec.encode(record);
-            RaftClientReply reply = raftClient.io().send(Message.valueOf(ByteString.copyFrom(bytes)));
-            if (!reply.isSuccess()) {
-                throw new IllegalStateException(
-                        "Controller quorum rejected metadata record: " + reply.getException());
+        long deadlineMs = System.currentTimeMillis() + config.getRequestTimeoutMs();
+        byte[] bytes = ControllerMetadataRecordCodec.encode(record);
+        RuntimeException lastFailure = null;
+        while (System.currentTimeMillis() <= deadlineMs) {
+            try {
+                RaftClientReply reply = raftClient.io().send(Message.valueOf(ByteString.copyFrom(bytes)));
+                if (reply.isSuccess()) {
+                    return;
+                }
+                lastFailure =
+                        new IllegalStateException(
+                                "Controller quorum rejected metadata record: "
+                                        + reply.getException());
+            } catch (IOException exception) {
+                lastFailure =
+                        new IllegalStateException(
+                                "Failed to submit controller metadata record", exception);
             }
-        } catch (IOException exception) {
-            throw new IllegalStateException("Failed to submit controller metadata record", exception);
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException interruptedException) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(
+                        "Interrupted while submitting controller metadata record", interruptedException);
+            }
         }
+        throw lastFailure == null
+                ? new IllegalStateException("Failed to submit controller metadata record")
+                : lastFailure;
     }
 
     private static RaftGroup buildGroup(ControllerQuorumConfig config) {

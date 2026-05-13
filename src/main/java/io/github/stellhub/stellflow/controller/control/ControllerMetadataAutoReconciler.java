@@ -93,7 +93,10 @@ public class ControllerMetadataAutoReconciler implements AutoCloseable {
     private void reconcilePartition(ControllerPartitionMetadata current) {
         ControllerPartitionMetadata livenessCandidate =
                 new ControllerMetadataPlanner()
-                        .reconcilePartition(current, metadataStateMachine.brokers());
+                        .reconcilePartition(
+                                current,
+                                metadataStateMachine.brokers(),
+                                config.isUncleanLeaderElectionEnabled());
         Optional<PartitionReplicaProgress> progressOptional =
                 replicaCoordinator.partitionProgress(current.topic(), current.partition());
         if (progressOptional.isEmpty()) {

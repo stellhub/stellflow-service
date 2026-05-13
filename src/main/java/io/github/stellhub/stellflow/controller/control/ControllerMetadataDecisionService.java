@@ -13,13 +13,22 @@ public class ControllerMetadataDecisionService {
     private final ControllerMetadataCommandService metadataCommandService;
     private final ControllerMetadataStateMachine metadataStateMachine;
     private final ControllerMetadataPlanner planner;
+    private final boolean uncleanLeaderElectionEnabled;
 
     public ControllerMetadataDecisionService(
             ControllerMetadataCommandService metadataCommandService,
             ControllerMetadataStateMachine metadataStateMachine) {
+        this(metadataCommandService, metadataStateMachine, false);
+    }
+
+    public ControllerMetadataDecisionService(
+            ControllerMetadataCommandService metadataCommandService,
+            ControllerMetadataStateMachine metadataStateMachine,
+            boolean uncleanLeaderElectionEnabled) {
         this.metadataCommandService = metadataCommandService;
         this.metadataStateMachine = metadataStateMachine;
         this.planner = new ControllerMetadataPlanner();
+        this.uncleanLeaderElectionEnabled = uncleanLeaderElectionEnabled;
     }
 
     /**
@@ -204,7 +213,8 @@ public class ControllerMetadataDecisionService {
             return;
         }
         ControllerPartitionMetadata next =
-                planner.reconcilePartition(current.get(), metadataStateMachine.brokers());
+                planner.reconcilePartition(
+                        current.get(), metadataStateMachine.brokers(), uncleanLeaderElectionEnabled);
         if (sameLeaderAndIsr(current.get(), next)) {
             return;
         }

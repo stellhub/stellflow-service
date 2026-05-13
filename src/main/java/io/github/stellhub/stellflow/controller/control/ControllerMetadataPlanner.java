@@ -90,6 +90,16 @@ public class ControllerMetadataPlanner {
      */
     public ControllerPartitionMetadata reconcilePartition(
             ControllerPartitionMetadata current, List<BrokerRegistrationMetadata> brokers) {
+        return reconcilePartition(current, brokers, false);
+    }
+
+    /**
+     * 基于当前拓扑、broker 可用性和 unclean 策略重算 leader 与 ISR。
+     */
+    public ControllerPartitionMetadata reconcilePartition(
+            ControllerPartitionMetadata current,
+            List<BrokerRegistrationMetadata> brokers,
+            boolean allowUncleanLeaderElection) {
         List<BrokerRegistrationMetadata> available = availableBrokers(brokers);
         List<Integer> availableReplicaIds =
                 current.replicaNodes().stream()
@@ -104,7 +114,7 @@ public class ControllerMetadataPlanner {
                         ? current.leaderId()
                         : !currentIsr.isEmpty()
                                 ? currentIsr.get(0)
-                                : !availableReplicaIds.isEmpty()
+                                : allowUncleanLeaderElection && !availableReplicaIds.isEmpty()
                                         ? availableReplicaIds.get(0)
                                         : current.leaderId();
         List<Integer> nextIsr =

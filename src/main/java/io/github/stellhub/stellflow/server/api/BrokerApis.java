@@ -7,6 +7,7 @@ import io.github.stellhub.stellflow.network.protocol.ApiKey;
 import io.github.stellhub.stellflow.network.protocol.EmptyResponseBody;
 import io.github.stellhub.stellflow.network.protocol.ErrorCode;
 import io.github.stellhub.stellflow.network.protocol.ResponseHeader;
+import io.github.stellhub.stellflow.producer.ProducerStateManager;
 import io.github.stellhub.stellflow.controller.replica.ControllerReplicaCoordinator;
 import io.github.stellhub.stellflow.server.runtime.ReplicaManager;
 import io.github.stellhub.stellflow.security.RequestGovernance;
@@ -145,12 +146,13 @@ public class BrokerApis implements AutoCloseable {
         ReplicaManager replicaManager = new ReplicaManager(logManager, metadataCache, true);
         OffsetStore offsetStore = new OffsetStore(logRootDir.resolve("__consumer_offsets.snapshot"));
         ConsumerGroupCoordinator groupCoordinator = new ConsumerGroupCoordinator(offsetStore);
+        ProducerStateManager producerStateManager = new ProducerStateManager();
         ControllerReplicaCoordinator controllerReplicaCoordinator =
                 new ControllerReplicaCoordinator(replicaManager);
         Map<ApiKey, ApiHandler> handlers = new HashMap<>();
         handlers.put(ApiKey.API_VERSIONS, new ApiVersionsHandler());
         handlers.put(ApiKey.METADATA, new MetadataHandler(metadataCache, advertisedHost, advertisedPort));
-        handlers.put(ApiKey.PRODUCE, new ProduceHandler(replicaManager));
+        handlers.put(ApiKey.PRODUCE, new ProduceHandler(replicaManager, producerStateManager));
         handlers.put(ApiKey.FETCH, new FetchHandler(replicaManager));
         handlers.put(ApiKey.LIST_OFFSETS, new ListOffsetsHandler(replicaManager));
         handlers.put(ApiKey.FIND_COORDINATOR, new FindCoordinatorHandler(0, advertisedHost, advertisedPort));
@@ -159,6 +161,13 @@ public class BrokerApis implements AutoCloseable {
         handlers.put(ApiKey.HEARTBEAT, new HeartbeatHandler(groupCoordinator));
         handlers.put(ApiKey.JOIN_GROUP, new JoinGroupHandler(groupCoordinator));
         handlers.put(ApiKey.SYNC_GROUP, new SyncGroupHandler(groupCoordinator));
+        handlers.put(ApiKey.INIT_PRODUCER_ID, new InitProducerIdHandler(producerStateManager));
+        handlers.put(
+                ApiKey.BEGIN_TRANSACTION,
+                new TransactionHandler(ApiKey.BEGIN_TRANSACTION, producerStateManager));
+        handlers.put(
+                ApiKey.END_TRANSACTION,
+                new TransactionHandler(ApiKey.END_TRANSACTION, producerStateManager));
         handlers.put(ApiKey.CREATE_TOPIC, new TopicAdminHandler(ApiKey.CREATE_TOPIC, replicaManager));
         handlers.put(ApiKey.DELETE_TOPIC, new TopicAdminHandler(ApiKey.DELETE_TOPIC, replicaManager));
         handlers.put(ApiKey.ALTER_PARTITION, new TopicAdminHandler(ApiKey.ALTER_PARTITION, replicaManager));

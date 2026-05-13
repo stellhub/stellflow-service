@@ -18,6 +18,7 @@ public class ControllerAutoReconcileConfig {
     @Builder.Default private final int intervalMs = 1000;
     @Builder.Default private final long brokerHeartbeatTimeoutMs = 5000;
     @Builder.Default private final long maxReplicaLagMessages = 0;
+    @Builder.Default private final boolean uncleanLeaderElectionEnabled = false;
 
     /**
      * 从统一 YAML 配置加载。
@@ -42,6 +43,11 @@ public class ControllerAutoReconcileConfig {
                                 properties,
                                 PREFIX + "maxReplicaLagMessages",
                                 defaults.getMaxReplicaLagMessages()))
+                .uncleanLeaderElectionEnabled(
+                        StellflowConfigLoader.readBoolean(
+                                properties,
+                                PREFIX + "uncleanLeaderElectionEnabled",
+                                defaults.isUncleanLeaderElectionEnabled()))
                 .build();
     }
 }

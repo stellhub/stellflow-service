@@ -151,6 +151,10 @@ stellflow:
       # when lag falls back within the threshold, controller auto-expands ISR.
       maxReplicaLagMessages: 0
 
+      # Whether a non-ISR but available replica may be elected as leader when no ISR replica is alive.
+      # Keep false for durability-first behavior; true trades possible data loss for availability.
+      uncleanLeaderElectionEnabled: false
+
   controller:
     quorum:
       # Whether to enable Apache Ratis based controller quorum.

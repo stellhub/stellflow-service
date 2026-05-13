@@ -76,6 +76,9 @@ public class ProtocolCodecRegistry {
         registry.registerRequestCodec(new GroupRequestBodyCodec(ApiKey.HEARTBEAT));
         registry.registerRequestCodec(new JoinGroupRequestBodyCodec());
         registry.registerRequestCodec(new GroupRequestBodyCodec(ApiKey.SYNC_GROUP));
+        registry.registerRequestCodec(new InitProducerIdRequestBodyCodec());
+        registry.registerRequestCodec(new TransactionRequestBodyCodec(ApiKey.BEGIN_TRANSACTION));
+        registry.registerRequestCodec(new TransactionRequestBodyCodec(ApiKey.END_TRANSACTION));
         registry.registerRequestCodec(new TopicAdminRequestBodyCodec(ApiKey.CREATE_TOPIC));
         registry.registerRequestCodec(new TopicAdminRequestBodyCodec(ApiKey.DELETE_TOPIC));
         registry.registerRequestCodec(new TopicAdminRequestBodyCodec(ApiKey.ALTER_PARTITION));
@@ -103,6 +106,9 @@ public class ProtocolCodecRegistry {
         registry.registerResponseCodec(new GroupResponseBodyCodec(ApiKey.HEARTBEAT));
         registry.registerResponseCodec(new JoinGroupResponseBodyCodec());
         registry.registerResponseCodec(new GroupResponseBodyCodec(ApiKey.SYNC_GROUP));
+        registry.registerResponseCodec(new InitProducerIdResponseBodyCodec());
+        registry.registerResponseCodec(new TransactionResponseBodyCodec(ApiKey.BEGIN_TRANSACTION));
+        registry.registerResponseCodec(new TransactionResponseBodyCodec(ApiKey.END_TRANSACTION));
         registry.registerResponseCodec(new TopicAdminResponseBodyCodec(ApiKey.CREATE_TOPIC));
         registry.registerResponseCodec(new TopicAdminResponseBodyCodec(ApiKey.DELETE_TOPIC));
         registry.registerResponseCodec(new TopicAdminResponseBodyCodec(ApiKey.ALTER_PARTITION));

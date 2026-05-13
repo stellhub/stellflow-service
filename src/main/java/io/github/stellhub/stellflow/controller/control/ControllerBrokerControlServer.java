@@ -67,12 +67,15 @@ public class ControllerBrokerControlServer implements AutoCloseable {
                 quorumManager != null
                         ? quorumManager
                         : new DirectControllerMetadataCommandService(metadataStateMachine);
+        ControllerAutoReconcileConfig reconcileConfig = ControllerAutoReconcileConfig.load();
         this.metadataDecisionService =
                 new ControllerMetadataDecisionService(
-                        metadataCommandService, metadataStateMachine);
+                        metadataCommandService,
+                        metadataStateMachine,
+                        reconcileConfig.isUncleanLeaderElectionEnabled());
         this.metadataAutoReconciler =
                 new ControllerMetadataAutoReconciler(
-                        ControllerAutoReconcileConfig.load(),
+                        reconcileConfig,
                         metadataStateMachine,
                         metadataDecisionService,
                         replicaCoordinator);
