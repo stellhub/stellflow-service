@@ -139,6 +139,7 @@ public class ControllerQuorumManager implements ControllerMetadataCommandService
             try {
                 RaftClientReply reply = raftClient.io().send(Message.valueOf(ByteString.copyFrom(bytes)));
                 if (reply.isSuccess()) {
+                    waitUntilLocallyApplied(record, deadlineMs);
                     return;
                 }
                 lastFailure =
@@ -161,6 +162,78 @@ public class ControllerQuorumManager implements ControllerMetadataCommandService
         throw lastFailure == null
                 ? new IllegalStateException("Failed to submit controller metadata record")
                 : lastFailure;
+    }
+
+    private void waitUntilLocallyApplied(ControllerMetadataRecord record, long deadlineMs) {
+        while (System.currentTimeMillis() <= deadlineMs) {
+            if (isLocallyApplied(record)) {
+                return;
+            }
+            try {
+                Thread.sleep(10);
+            } catch (InterruptedException interruptedException) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(
+                        "Interrupted while waiting for controller metadata apply",
+                        interruptedException);
+            }
+        }
+        throw new IllegalStateException(
+                "Timed out waiting for local controller metadata apply: " + record.type());
+    }
+
+    private boolean isLocallyApplied(ControllerMetadataRecord record) {
+        return switch (record.type()) {
+            case REGISTER_BROKER ->
+                    metadataStateMachine.broker(record.brokerId()).isPresent();
+            case FENCE_BROKER ->
+                    metadataStateMachine
+                            .broker(record.brokerId())
+                            .map(broker -> broker.fenced())
+                            .orElse(false);
+            case UNFENCE_BROKER ->
+                    metadataStateMachine
+                            .broker(record.brokerId())
+                            .map(broker -> !broker.fenced())
+                            .orElse(false);
+            case CREATE_TOPIC ->
+                    metadataStateMachine
+                            .topic(record.topic())
+                            .map(topic -> topic.partitionCount() == record.partitionCount())
+                            .orElse(false);
+            case DELETE_TOPIC -> metadataStateMachine.topic(record.topic()).isEmpty();
+            case EXPAND_TOPIC_PARTITIONS ->
+                    metadataStateMachine
+                            .topic(record.topic())
+                            .map(topic -> topic.partitionCount() == record.partitionCount())
+                            .orElse(false);
+            case UPDATE_PARTITION_TOPOLOGY ->
+                    metadataStateMachine
+                            .partition(record.topic(), record.partition())
+                            .map(partition -> partition.replicaNodes().equals(record.replicaNodes()))
+                            .orElse(false);
+            case UPDATE_PARTITION_LEADER_ISR ->
+                    metadataStateMachine
+                            .partition(record.topic(), record.partition())
+                            .map(
+                                    partition ->
+                                            partition.leaderId() == record.leaderId()
+                                                    && partition.leaderEpoch() == record.leaderEpoch()
+                                                    && partition.isrNodes().equals(record.isrNodes()))
+                            .orElse(false);
+            case SHRINK_PARTITION_ISR ->
+                    metadataStateMachine
+                            .partition(record.topic(), record.partition())
+                            .map(partition -> !partition.isrNodes().contains(record.brokerId()))
+                            .orElse(false);
+            case EXPAND_PARTITION_ISR ->
+                    metadataStateMachine
+                            .partition(record.topic(), record.partition())
+                            .map(partition -> partition.isrNodes().contains(record.brokerId()))
+                            .orElse(false);
+            case REMOVE_PARTITION ->
+                    metadataStateMachine.partition(record.topic(), record.partition()).isEmpty();
+        };
     }
 
     private static RaftGroup buildGroup(ControllerQuorumConfig config) {

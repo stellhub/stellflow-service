@@ -4,6 +4,7 @@ package io.github.stellhub.stellflow.tools.validation;
  * 验证场景。
  */
 public enum ValidationScenario {
+    P0_CLUSTER,
     BENCHMARK,
     SOAK,
     FAULT_INJECTION,

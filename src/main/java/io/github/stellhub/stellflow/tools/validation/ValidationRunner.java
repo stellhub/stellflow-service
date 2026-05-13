@@ -10,8 +10,12 @@ public class ValidationRunner {
      */
     public ValidationResult run(ValidationScenario scenario) {
         long startMs = System.currentTimeMillis();
+        if (scenario == ValidationScenario.P0_CLUSTER) {
+            return new ClusterFailoverValidator().run();
+        }
         String message =
                 switch (scenario) {
+                    case P0_CLUSTER -> "p0 cluster scenario initialized";
                     case BENCHMARK -> "benchmark scenario initialized";
                     case SOAK -> "soak scenario initialized";
                     case FAULT_INJECTION -> "fault injection scenario initialized";

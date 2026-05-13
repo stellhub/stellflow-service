@@ -123,7 +123,7 @@ public class BrokerApis implements AutoCloseable {
      * 创建默认 BrokerApis。
      */
     public static BrokerApis defaultBrokerApis() {
-        return defaultBrokerApis("127.0.0.1", 9092, LogStorageConfig.load().getRootDir());
+        return defaultBrokerApis(0, "127.0.0.1", 9092, LogStorageConfig.load().getRootDir());
     }
 
     /**
@@ -131,7 +131,16 @@ public class BrokerApis implements AutoCloseable {
      */
     public static BrokerApis defaultBrokerApis(String advertisedHost, int advertisedPort) {
         return defaultBrokerApis(
-                advertisedHost, advertisedPort, LogStorageConfig.load().getRootDir());
+                0, advertisedHost, advertisedPort, LogStorageConfig.load().getRootDir());
+    }
+
+    /**
+     * 创建带显式 brokerId 与地址的默认 BrokerApis。
+     */
+    public static BrokerApis defaultBrokerApis(
+            int brokerId, String advertisedHost, int advertisedPort) {
+        return defaultBrokerApis(
+                brokerId, advertisedHost, advertisedPort, LogStorageConfig.load().getRootDir());
     }
 
     /**
@@ -139,8 +148,16 @@ public class BrokerApis implements AutoCloseable {
      */
     public static BrokerApis defaultBrokerApis(
             String advertisedHost, int advertisedPort, Path logRootDir) {
+        return defaultBrokerApis(0, advertisedHost, advertisedPort, logRootDir);
+    }
+
+    /**
+     * 创建带显式 brokerId、地址与日志目录的默认 BrokerApis。
+     */
+    public static BrokerApis defaultBrokerApis(
+            int brokerId, String advertisedHost, int advertisedPort, Path logRootDir) {
         LogManager logManager = new LogManager(logRootDir);
-        MetadataCache metadataCache = new MetadataCache(0);
+        MetadataCache metadataCache = new MetadataCache(brokerId);
         metadataCache.registerLocalBroker(advertisedHost, advertisedPort);
         metadataCache.bootstrapFromLogManager(logManager);
         ReplicaManager replicaManager = new ReplicaManager(logManager, metadataCache, true);

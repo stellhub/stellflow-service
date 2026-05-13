@@ -12,7 +12,8 @@ import lombok.Getter;
 @Getter
 public class ControllerAutoReconcileConfig {
 
-    private static final String PREFIX = "stellflow.controller.reconcile.";
+    private static final String PREFIX = "stellflow.controlPlane.reconcile.";
+    private static final String LEGACY_PREFIX = "stellflow.controller.reconcile.";
 
     @Builder.Default private final boolean enabled = true;
     @Builder.Default private final int intervalMs = 1000;
@@ -28,26 +29,52 @@ public class ControllerAutoReconcileConfig {
         Properties properties = StellflowConfigLoader.load();
         return ControllerAutoReconcileConfig.builder()
                 .enabled(
-                        StellflowConfigLoader.readBoolean(
-                                properties, PREFIX + "enabled", defaults.isEnabled()))
+                        readBoolean(properties, "enabled", defaults.isEnabled()))
                 .intervalMs(
-                        StellflowConfigLoader.readPositiveInt(
-                                properties, PREFIX + "intervalMs", defaults.getIntervalMs()))
+                        readPositiveInt(properties, "intervalMs", defaults.getIntervalMs()))
                 .brokerHeartbeatTimeoutMs(
-                        StellflowConfigLoader.readPositiveLong(
+                        readPositiveLong(
                                 properties,
-                                PREFIX + "brokerHeartbeatTimeoutMs",
+                                "brokerHeartbeatTimeoutMs",
                                 defaults.getBrokerHeartbeatTimeoutMs()))
                 .maxReplicaLagMessages(
-                        StellflowConfigLoader.readNonNegativeLong(
+                        readNonNegativeLong(
                                 properties,
-                                PREFIX + "maxReplicaLagMessages",
+                                "maxReplicaLagMessages",
                                 defaults.getMaxReplicaLagMessages()))
                 .uncleanLeaderElectionEnabled(
-                        StellflowConfigLoader.readBoolean(
+                        readBoolean(
                                 properties,
-                                PREFIX + "uncleanLeaderElectionEnabled",
+                                "uncleanLeaderElectionEnabled",
                                 defaults.isUncleanLeaderElectionEnabled()))
                 .build();
+    }
+
+    private static boolean readBoolean(Properties properties, String key, boolean defaultValue) {
+        return StellflowConfigLoader.readBoolean(
+                properties, effectiveKey(properties, key), defaultValue);
+    }
+
+    private static int readPositiveInt(Properties properties, String key, int defaultValue) {
+        return StellflowConfigLoader.readPositiveInt(
+                properties, effectiveKey(properties, key), defaultValue);
+    }
+
+    private static long readPositiveLong(Properties properties, String key, long defaultValue) {
+        return StellflowConfigLoader.readPositiveLong(
+                properties, effectiveKey(properties, key), defaultValue);
+    }
+
+    private static long readNonNegativeLong(Properties properties, String key, long defaultValue) {
+        return StellflowConfigLoader.readNonNegativeLong(
+                properties, effectiveKey(properties, key), defaultValue);
+    }
+
+    private static String effectiveKey(Properties properties, String key) {
+        String primaryKey = PREFIX + key;
+        if (System.getProperty(primaryKey) != null || properties.containsKey(primaryKey)) {
+            return primaryKey;
+        }
+        return LEGACY_PREFIX + key;
     }
 }

@@ -37,14 +37,17 @@ public final class StellflowBrokerApplication {
         RequestChannel requestChannel = new InMemoryRequestChannel();
         ProtocolCodecRegistry protocolCodecRegistry = ProtocolCodecRegistry.defaultRegistry();
         NettyTransportConfig transportConfig = NettyTransportConfig.load();
+        ControlPlaneGrpcConfig controlPlaneGrpcConfig = ControlPlaneGrpcConfig.load();
         BrokerApis brokerApis =
-                BrokerApis.defaultBrokerApis(transportConfig.getHost(), transportConfig.getPort());
+                BrokerApis.defaultBrokerApis(
+                        controlPlaneGrpcConfig.getBrokerId(),
+                        controlPlaneGrpcConfig.getAdvertisedHost(),
+                        controlPlaneGrpcConfig.getAdvertisedPort());
         ReplicaFetchMetrics replicaFetchMetrics = new ReplicaFetchMetrics();
         ReplicaFetchConfig replicaFetchConfig = ReplicaFetchConfig.load();
         ReplicaFetchManager replicaFetchManager =
                 ReplicaFetchManager.fromConfig(
                         replicaFetchConfig, brokerApis.logManager(), replicaFetchMetrics);
-        ControlPlaneGrpcConfig controlPlaneGrpcConfig = ControlPlaneGrpcConfig.load();
         ControllerBrokerControlServer controlServer =
                 new ControllerBrokerControlServer(
                         controlPlaneGrpcConfig,
