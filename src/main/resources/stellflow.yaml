@@ -185,6 +185,12 @@ stellflow:
       requestTimeoutMs: 3000
 
   observability:
+    logging:
+      messageFlowDebug:
+        # Whether to print per-produce and per-response debug logs.
+        # Keep false for high-throughput production traffic to avoid excessive log volume.
+        enabled: false
+
     metrics:
       http:
         # Whether to expose a Prometheus scrape endpoint.

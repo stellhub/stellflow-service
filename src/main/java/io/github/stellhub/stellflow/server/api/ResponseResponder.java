@@ -1,10 +1,11 @@
 package io.github.stellhub.stellflow.server.api;
 
+import io.github.stellhub.stellflow.observability.logging.MessageFlowDebugLogConfig;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
-import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * 响应回写执行器。
@@ -14,9 +15,14 @@ import lombok.RequiredArgsConstructor;
 public class ResponseResponder implements AutoCloseable {
 
     private final RequestChannel requestChannel;
+    private final MessageFlowDebugLogConfig debugLogConfig;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private ExecutorService executorService;
+
+    public ResponseResponder(RequestChannel requestChannel) {
+        this(requestChannel, MessageFlowDebugLogConfig.load());
+    }
 
     /**
      * 启动响应回写线程。
@@ -54,6 +60,7 @@ public class ResponseResponder implements AutoCloseable {
         while (running.get()) {
             try {
                 ResponseContext responseContext = requestChannel.takeResponse();
+                logResponseDebug(responseContext);
                 responseContext.getRequestContext().getResponseWriter().write(responseContext);
             } catch (InterruptedException interruptedException) {
                 Thread.currentThread().interrupt();
@@ -63,5 +70,25 @@ public class ResponseResponder implements AutoCloseable {
                 log.error("Unexpected ResponseResponder failure", exception);
             }
         }
+    }
+
+    private void logResponseDebug(ResponseContext responseContext) {
+        if (!debugLogConfig.isEnabled()) {
+            return;
+        }
+        RequestContext requestContext = responseContext.getRequestContext();
+        log.info(
+                "Send response debug connectionId={} clientId={} correlationId={} traceId={} apiKey={} apiVersion={} errorCode={} zeroCopyRegions={} fetchRecordRegions={}",
+                requestContext.getConnectionId(),
+                requestContext.getClientId(),
+                requestContext.getCorrelationId(),
+                requestContext.getTraceId(),
+                responseContext.getApiKey(),
+                responseContext.getApiVersion(),
+                responseContext.getResponseHeader() == null
+                        ? null
+                        : responseContext.getResponseHeader().errorCode(),
+                responseContext.getZeroCopyFileRegions().size(),
+                responseContext.getFetchRecordsFileRegions().size());
     }
 }

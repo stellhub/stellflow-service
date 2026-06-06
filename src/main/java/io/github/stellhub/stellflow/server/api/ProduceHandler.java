@@ -11,31 +11,36 @@ import io.github.stellhub.stellflow.network.protocol.ProduceResponseBody;
 import io.github.stellhub.stellflow.network.protocol.ProduceTopicData;
 import io.github.stellhub.stellflow.network.protocol.ProduceTopicResponse;
 import io.github.stellhub.stellflow.network.protocol.ResponseHeader;
+import io.github.stellhub.stellflow.observability.logging.MessageFlowDebugLogConfig;
 import io.github.stellhub.stellflow.observability.metrics.StellflowMetrics;
 import io.github.stellhub.stellflow.producer.ProducerAppendDecision;
 import io.github.stellhub.stellflow.producer.ProducerStateManager;
-import io.github.stellhub.stellflow.storage.log.LogAppendResult;
-import io.github.stellhub.stellflow.storage.log.LogManager;
 import io.github.stellhub.stellflow.server.runtime.PartitionAppendResult;
 import io.github.stellhub.stellflow.server.runtime.ReplicaManager;
+import io.github.stellhub.stellflow.storage.log.LogAppendResult;
+import io.github.stellhub.stellflow.storage.log.LogManager;
 import java.util.ArrayList;
 import java.util.List;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Produce 请求处理器。
  */
+@Slf4j
 public class ProduceHandler implements ApiHandler {
 
     private final LogManager logManager;
     private final ReplicaManager replicaManager;
     private final ProducerStateManager producerStateManager;
     private final StellflowMetrics metrics;
+    private final MessageFlowDebugLogConfig debugLogConfig;
 
     public ProduceHandler(LogManager logManager) {
         this.logManager = logManager;
         this.replicaManager = null;
         this.producerStateManager = new ProducerStateManager();
         this.metrics = StellflowMetrics.global();
+        this.debugLogConfig = MessageFlowDebugLogConfig.load();
     }
 
     public ProduceHandler(ReplicaManager replicaManager) {
@@ -50,10 +55,19 @@ public class ProduceHandler implements ApiHandler {
             ReplicaManager replicaManager,
             ProducerStateManager producerStateManager,
             StellflowMetrics metrics) {
+        this(replicaManager, producerStateManager, metrics, MessageFlowDebugLogConfig.load());
+    }
+
+    public ProduceHandler(
+            ReplicaManager replicaManager,
+            ProducerStateManager producerStateManager,
+            StellflowMetrics metrics,
+            MessageFlowDebugLogConfig debugLogConfig) {
         this.logManager = null;
         this.replicaManager = replicaManager;
         this.producerStateManager = producerStateManager;
         this.metrics = metrics;
+        this.debugLogConfig = debugLogConfig;
     }
 
     @Override
@@ -104,6 +118,15 @@ public class ProduceHandler implements ApiHandler {
                 long partitionStartMs = System.currentTimeMillis();
                 if (partitionData.records() == null || partitionData.records().length == 0) {
                     recordProduce(topicData.topic(), partitionData.partition(), ErrorCode.INVALID_RECORD, 0, partitionStartMs);
+                    logProduceDebug(
+                            requestContext,
+                            produceRequestBody,
+                            topicData.topic(),
+                            partitionData.partition(),
+                            0,
+                            ErrorCode.INVALID_RECORD,
+                            -1,
+                            -1);
                     partitionResponses.add(
                             new ProducePartitionResponse(
                                     partitionData.partition(),
@@ -116,6 +139,15 @@ public class ProduceHandler implements ApiHandler {
                 }
                 if (produceRequestBody.acks() < -1 || produceRequestBody.acks() > 1) {
                     recordProduce(topicData.topic(), partitionData.partition(), ErrorCode.INVALID_REQUEST, 0, partitionStartMs);
+                    logProduceDebug(
+                            requestContext,
+                            produceRequestBody,
+                            topicData.topic(),
+                            partitionData.partition(),
+                            partitionData.records().length,
+                            ErrorCode.INVALID_REQUEST,
+                            -1,
+                            -1);
                     partitionResponses.add(
                             new ProducePartitionResponse(
                                     partitionData.partition(),
@@ -139,6 +171,15 @@ public class ProduceHandler implements ApiHandler {
                             decision.errorCode(),
                             partitionData.records().length,
                             partitionStartMs);
+                    logProduceDebug(
+                            requestContext,
+                            produceRequestBody,
+                            topicData.topic(),
+                            partitionData.partition(),
+                            partitionData.records().length,
+                            decision.errorCode(),
+                            -1,
+                            -1);
                     partitionResponses.add(
                             new ProducePartitionResponse(
                                     partitionData.partition(),
@@ -156,6 +197,15 @@ public class ProduceHandler implements ApiHandler {
                             ErrorCode.NONE,
                             0,
                             partitionStartMs);
+                    logProduceDebug(
+                            requestContext,
+                            produceRequestBody,
+                            topicData.topic(),
+                            partitionData.partition(),
+                            partitionData.records().length,
+                            ErrorCode.NONE,
+                            decision.duplicateBaseOffset(),
+                            -1);
                     partitionResponses.add(
                             new ProducePartitionResponse(
                                     partitionData.partition(),
@@ -180,6 +230,15 @@ public class ProduceHandler implements ApiHandler {
                             partitionData.partition(),
                             appendResult.baseOffset());
                 }
+                logProduceDebug(
+                        requestContext,
+                        produceRequestBody,
+                        topicData.topic(),
+                        partitionData.partition(),
+                        partitionData.records().length,
+                        appendResult.errorCode(),
+                        appendResult.baseOffset(),
+                        appendResult.logEndOffset());
                 partitionResponses.add(
                         new ProducePartitionResponse(
                                 partitionData.partition(),
@@ -237,5 +296,33 @@ public class ProduceHandler implements ApiHandler {
     private void recordProduce(
             String topic, int partition, ErrorCode errorCode, long bytes, long startMs) {
         metrics.recordProduce(topic, partition, errorCode, bytes, System.currentTimeMillis() - startMs);
+    }
+
+    private void logProduceDebug(
+            RequestContext requestContext,
+            ProduceRequestBody body,
+            String topic,
+            int partition,
+            int recordBytes,
+            ErrorCode errorCode,
+            long baseOffset,
+            long logEndOffset) {
+        if (!debugLogConfig.isEnabled()) {
+            return;
+        }
+        log.info(
+                "Produce message debug connectionId={} clientId={} correlationId={} traceId={} topic={} partition={} recordBytes={} acks={} timeoutMs={} errorCode={} baseOffset={} logEndOffset={}",
+                requestContext.getConnectionId(),
+                requestContext.getClientId(),
+                requestContext.getCorrelationId(),
+                requestContext.getTraceId(),
+                topic,
+                partition,
+                recordBytes,
+                body.acks(),
+                body.timeoutMs(),
+                errorCode,
+                baseOffset,
+                logEndOffset);
     }
 }
