@@ -1,80 +1,147 @@
-# Stellflow
+# StellFlow Service
 
-Stellflow 是一个基于 JDK 25 实现的分布式消息队列项目，整体领域模型、运行角色和核心工程思想以 Apache Kafka 最新主线架构为参考，但**并不是对 Kafka 原始实现路径的逐项复刻**。
+`stellflow-service` 是 StellHub 体系中的分布式消息队列服务端项目。它保留 Topic、Partition、Replica、ISR、Offset、Controller Quorum 等消息队列核心语义，并采用更现代的 Java、Netty、gRPC、Raft 与 OpenTelemetry 工程路线实现。
 
-它的目标是：
+## 项目概述
 
-- 保持 Kafka 风格的 Topic / Partition / Replica / ISR / Offset / Controller Quorum 体系
-- 保持 Kafka 风格的高吞吐日志存储与分区复制思想
-- 使用纯 Java 重新构建实现
-- 在基础设施层面采用与 Kafka 不同、但更符合当前项目目标的技术路线
-
-## 一眼看懂：Stellflow 和 Kafka 的不同
-
-当前仓库与 Apache Kafka 的关键差异如下：
-
-| 维度 | Kafka 原生路线 | Stellflow 当前路线 |
-| --- | --- | --- |
-| Broker / Client 通信 | 自定义二进制协议，Java 原生网络栈风格 | 自定义二进制协议，Java 客户端底层 Netty，Golang 客户端底层自研 |
-| Broker 间数据复制 | 复用核心二进制协议 | 复用同一套二进制协议，底层统一 Netty |
-| Controller / Broker 控制面通信 | Kafka 自身协议体系 | 使用 gRPC |
-| Controller Quorum 一致性 | KRaft | 使用 Apache 的 Raft |
-| 消息存储核心 | 自研日志段 | 自研日志段，不走 gRPC，不走 KV |
-| 可观测性 | JMX-first | OpenTelemetry-first，不再支持 JMX |
-
-如果只看一句话，可以这样理解：
-
-> Stellflow 保留 Kafka 的核心语义和分布式日志思想，但在通信、控制面一致性实现和可观测性标准上，明确走与 Kafka 不同的现代化路线。
-
-## 当前已确认的技术决策
-
-1. Broker / Client 通信：自定义二进制协议，Java 客户端底层 Netty，Golang 客户端底层自研。
-2. Broker 间数据复制：复用同一套二进制协议，底层使用 Netty。
-3. Controller / Broker 控制面通信：使用 gRPC。
-4. Controller Quorum 一致性：使用 Apache 的 Raft。
-5. 消息存储核心：自研日志段，不走 gRPC，不走 KV。
-6. 可观测性：使用 OpenTelemetry 标准，不再支持 JMX。
-7. 配置与文档层正式使用 `stellflow://` 表达数据面 endpoint，但线上 TCP 二进制协议本身不携带文本前缀。
-
-## 设计文档
-
-当前仓库已经沉淀的设计文档如下：
-
-- [概要设计](./docs/overview-design.md)
-- [存储层详细设计](./docs/storage-detailed-design.md)
-- [Broker 请求处理链路设计](./docs/broker-request-pipeline-design.md)
-- [Controller 与 Replica 详细设计](./docs/controller-replica-detailed-design.md)
-- [通信与基础设施选型调研](./docs/communication-research.md)
-- [高性能协议选型与吞吐设计对照](./docs/high-performance-protocol-comparison.md)
-- [数据面高吞吐性能设计](./docs/data-plane-performance-design.md)
-- [压测计划](./docs/benchmark-plan.md)
-- [Netty 数据面实现指南](./docs/netty-data-plane-implementation-guide.md)
-- [协议规范文档](./docs/protocol-spec.md)
-- [ApiVersions / Metadata 消息格式规范](./docs/api-versions-and-metadata-format.md)
-- [Produce / Fetch 消息格式规范](./docs/produce-fetch-message-format.md)
-- [ListOffsets 接口说明](./docs/list-offsets-interface.md)
-- [FetchRequestBody 消息格式规范](./docs/fetch-request-format.md)
-- [ProduceResponseBody 消息格式规范](./docs/produce-response-format.md)
-- [消息格式样例报文](./docs/message-format-examples.md)
-- [协议兼容性测试计划](./docs/protocol-compatibility-test-plan.md)
-- [Replica Fetch 运行设计](./docs/replica-fetch-runtime-design.md)
-- [OTel 指标字典](./docs/otel-metrics-dictionary.md)
-- [ADR 索引](./docs/adr/README.md)
-
-## 项目定位
-
-Stellflow 面向以下典型场景：
-
-- 异步解耦
-- 事件分发
-- 流式传输
-- 高吞吐日志聚合
-- 削峰填谷与任务缓冲
+StellFlow 的定位是基础设施级消息系统，不是对某个开源项目的逐行复刻。它的目标是构建一套可学习、可演进、可观测、可控制的消息队列服务端，为 StellHub 体系中的日志、事件和异步任务链路提供基础能力。
 
 ## 当前状态
 
-当前仓库仍处于设计与骨架规划阶段，重点工作在于：
+| 项目 | 说明 |
+| --- | --- |
+| 稳定性 | 开发中 |
+| 服务类型 | 分布式消息队列服务端 |
+| 推荐运行时 | JDK 25 |
+| 通信模型 | 自定义协议、Netty、gRPC 控制面 |
+| 一致性模型 | Raft Controller Quorum |
+| 可观测性 | OpenTelemetry-first |
+| 维护方 | StellHub |
 
-- 固化总体架构与模块边界
-- 明确通信、存储、控制面和可观测性技术路线
-- 为后续代码骨架实现提供统一设计基线
+## 解决什么问题
+
+- 提供 Topic / Partition / Replica 模型。
+- 支持面向高吞吐写入的分布式日志存储。
+- 支持 Broker、Controller、Client 等基础运行角色。
+- 支持分区复制、消费位点和控制面一致性。
+- 为日志链路、事件链路和异步消息提供统一底座。
+
+## 不解决什么问题
+
+- 不作为 Kafka 原始实现的逐项复刻。
+- 不承诺兼容 Kafka 二进制协议。
+- 不直接提供业务工作流编排。
+- 不替代数据库或通用 KV 存储。
+
+## 核心能力
+
+| 能力 | 说明 | 典型场景 |
+| --- | --- | --- |
+| Topic 管理 | 组织消息逻辑主题 | 日志、事件、任务分流 |
+| Partition | 提供分区并行能力 | 高吞吐写入和消费 |
+| Replica | 分区副本复制 | 高可用 |
+| Offset | 消费进度管理 | 消费恢复 |
+| Controller | 管理集群元数据 | 分区调度、故障恢复 |
+| Observability | OpenTelemetry 指标与链路 | 运维排查 |
+
+## 架构说明
+
+```mermaid
+flowchart LR
+    Producer[Producer Client] --> Broker[Broker]
+    Consumer[Consumer Client] --> Broker
+    Broker --> Log[Partition Log]
+    Broker --> Controller[Controller]
+    Controller --> Raft[Controller Quorum]
+    Broker --> OTel[OpenTelemetry]
+```
+
+## 快速开始
+
+```bash
+mvn clean test
+mvn clean package -DskipTests
+```
+
+本地运行方式以仓库内 `cmd`、`scripts` 或 `docs` 中的启动说明为准。
+
+## 配置说明
+
+| 配置项 | 是否必填 | 说明 |
+| --- | --- | --- |
+| broker.id | 是 | Broker 节点 ID |
+| broker.host | 是 | Broker 对外地址 |
+| broker.port | 是 | Broker 监听端口 |
+| controller.quorum | 是 | Controller 节点列表 |
+| log.dirs | 是 | 分区日志存储目录 |
+| telemetry.enabled | 否 | 是否开启可观测性上报 |
+
+## 本地开发
+
+```bash
+mvn clean verify
+```
+
+涉及协议、日志存储、复制、选主、位点和控制面元数据的改动必须补充测试。
+
+## 版本与升级
+
+- `MAJOR`：不兼容协议、存储格式或集群元数据变更。
+- `MINOR`：向后兼容的新能力。
+- `PATCH`：向后兼容的问题修复。
+
+## 可观测性
+
+| 类型 | 名称 | 说明 |
+| --- | --- | --- |
+| Metric | stellflow_broker_request_total | Broker 请求总数 |
+| Metric | stellflow_partition_lag | 分区复制滞后 |
+| Metric | stellflow_controller_leader_changes_total | Controller Leader 变更次数 |
+| Log | BROKER_STARTED | Broker 启动 |
+| Log | PARTITION_REASSIGNED | 分区重新分配 |
+
+## 故障排查
+
+### Producer 写入失败
+
+1. 检查 Broker 是否启动。
+2. 检查 Topic 和 Partition 是否存在。
+3. 检查 Controller 是否可用。
+4. 检查日志目录是否可写。
+
+### Consumer 无法消费
+
+1. 检查消费位点是否正确。
+2. 检查目标分区是否存在可用副本。
+3. 检查 Broker 与客户端协议版本是否匹配。
+
+## 安全说明
+
+- 生产环境配置不应直接提交到仓库。
+- 管理端口和内部通信端口应限制访问范围。
+- 数据目录需要按生产规范配置磁盘、权限和备份策略。
+
+## 目录结构
+
+```text
+.
+├── src/            # 服务源码
+├── docs/           # 设计与运维文档
+├── scripts/        # 构建和启动脚本
+├── pom.xml         # Maven 构建文件
+└── README.md       # 项目说明
+```
+
+## 贡献规范
+
+- 协议、存储格式、复制语义变更必须先写设计说明。
+- 核心链路变更必须补充测试。
+- 行为变更必须同步更新 README 或 docs。
+
+## 支持
+
+由 StellHub 维护。建议通过 GitHub Issues 记录问题、需求和设计讨论。
+
+## 许可证
+
+以仓库内 `LICENSE` 文件为准。
